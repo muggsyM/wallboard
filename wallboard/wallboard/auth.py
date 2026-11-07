@@ -9,6 +9,7 @@ import hmac
 import math
 import os
 import time
+from collections import deque
 from urllib.parse import quote
 
 from fastapi import HTTPException, Request
@@ -108,6 +109,8 @@ class LoginLimiter:
     """
 
     MAX_ENTRIES = 1024
+    GLOBAL_MAX_FAILURES = 30
+    GLOBAL_WINDOW = 900.0
     _MAX_EXPONENT = 20
 
     def __init__(
@@ -123,13 +126,15 @@ class LoginLimiter:
         self._now = now
         # ip -> [attempts, locked_until, lockouts, last_seen]
         self._state: dict[str, list] = {}
+        self._global: deque[float] = deque()  # reservation times not cleared by a success
 
     def _prune(self, now: float) -> None:
+        """Drop only dead entries: unlocked and idle longer than max_lockout. Never evicts live ones."""
         stale = [ip for ip, st in self._state.items() if st[1] <= now and now - st[3] > self.max_lockout]
         for ip in stale:
             del self._state[ip]
-        while len(self._state) >= self.MAX_ENTRIES:
-            del self._state[next(iter(self._state))]  # oldest inserted/touched first
+        while self._global and self._global[0] <= now - self.GLOBAL_WINDOW:
+            self._global.popleft()
 
     def retry_after(self, ip: str) -> int:
         """Whole seconds until another attempt is allowed (0 if allowed now)."""
@@ -142,11 +147,17 @@ class LoginLimiter:
         """Reserve an attempt. Returns 0 if admitted, else seconds to wait (attempt refused)."""
         now = self._now()
         self._prune(now)
-        st = self._state.pop(ip, None) or [0, 0.0, 0, now]
-        self._state[ip] = st  # re-insert: most recently touched last
-        st[3] = now
-        if st[1] > now:
+        st = self._state.get(ip)
+        if st is not None and st[1] > now:
             return math.ceil(st[1] - now)
+        if st is None and len(self._state) >= self.MAX_ENTRIES:
+            return math.ceil(self.lockout_seconds)  # table full of live entries: fail closed
+        if len(self._global) >= self.GLOBAL_MAX_FAILURES:
+            return max(1, math.ceil(self._global[0] + self.GLOBAL_WINDOW - now))
+        if st is None:
+            st = self._state[ip] = [0, 0.0, 0, now]
+        st[3] = now
+        self._global.append(now)
         st[0] += 1
         if st[0] >= self.max_failures:
             st[1] = now + self.max_lockout  # fail closed if the arithmetic below raises
@@ -158,3 +169,5 @@ class LoginLimiter:
 
     def success(self, ip: str) -> None:
         self._state.pop(ip, None)
+        if self._global:
+            self._global.pop()  # the reserved attempt turned out to be a success

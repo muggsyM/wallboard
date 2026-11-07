@@ -231,16 +231,45 @@ def test_limiter_exponent_clamped():
     assert lim.retry_after("a") == 900
 
 
-def test_limiter_prunes_stale_and_caps_size():
+def test_limiter_prunes_only_dead_entries():
     now = [0.0]
     lim = auth.LoginLimiter(now=lambda: now[0])
     lim.begin("old")
     now[0] = 10_000
     lim.begin("new")
-    assert "old" not in lim._state
-    for i in range(auth.LoginLimiter.MAX_ENTRIES + 50):
+    assert "old" not in lim._state and "new" in lim._state
+
+
+def test_limiter_full_table_of_live_lockouts_fails_closed():
+    now = [100.0]
+    lim = auth.LoginLimiter(now=lambda: now[0])
+    lim.MAX_ENTRIES = 4
+    for i in range(4):
+        lim._state[f"ip{i}"] = [0, 160.0, 1, 100.0]
+    assert lim.begin("fresh") > 0
+    assert "fresh" not in lim._state
+    assert all(lim._state[f"ip{i}"][1] == 160.0 for i in range(4))
+    assert lim.begin("ip0") == 60  # existing lockout still enforced
+
+
+def test_limiter_global_budget_across_ips():
+    now = [0.0]
+    lim = auth.LoginLimiter(now=lambda: now[0])
+    for i in range(30):
+        assert lim.begin(f"ip{i}") == 0
+        now[0] += 1
+    assert lim.begin("another") == 870  # now=30; oldest (t=0) ages out at 900
+    assert "another" not in lim._state
+    now[0] = 900
+    assert lim.begin("another") == 0
+
+
+def test_limiter_success_releases_global_slot():
+    lim = auth.LoginLimiter(now=lambda: 0.0)
+    for i in range(30):
         lim.begin(f"ip{i}")
-    assert len(lim._state) <= auth.LoginLimiter.MAX_ENTRIES
+    lim.success("ip5")
+    assert lim.begin("x") == 0
 
 
 async def test_concurrent_wrong_logins_run_at_most_five_verifications(data_dir, monkeypatch):
