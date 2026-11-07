@@ -298,7 +298,12 @@ def test_startup_sweep(c, app, data_dir):
     (d / f"{'b' * 32}.jpg").write_bytes(b"x")
     (d / f"{'b' * 32}.thumb.jpg").write_bytes(b"x")
     PhotoStore(data_dir, app.state.hub)
-    assert sorted(p.name for p in d.iterdir()) == sorted(f"{pid}{s}" for s in (".jpg", ".bg.jpg", ".thumb.jpg"))
+    assert sorted(p.name for p in d.iterdir() if p.is_file()) == sorted(
+        f"{pid}{s}" for s in (".jpg", ".bg.jpg", ".thumb.jpg")
+    )
+    assert sorted(p.name for p in (d / "orphans").iterdir()) == sorted(f"{'b' * 32}{s}" for s in (".jpg", ".thumb.jpg"))
+    assert c.get(f"/media/orphans/{'b' * 32}.jpg").status_code == 404
+    assert c.get(f"/media/{'b' * 32}.jpg").status_code == 404
 
 
 @pytest.mark.parametrize(
@@ -307,7 +312,7 @@ def test_startup_sweep(c, app, data_dir):
         (". .", "ID"),
         ('a:b*c?d"e<f>g|h', "abcdefgh"),
         ("CON", "CON_"),
-        ("nul.txt", "nul.txt_"),
+        ("nul.txt", "nul_.txt"),
         ("com1", "com1_"),
         ("  Trip  ", "Trip"),
         ("\x00\x01", "ID"),
@@ -338,3 +343,81 @@ def test_album_name_limits_and_single_patch_publish(c, app):
     assert c.patch(f"/api/admin/albums/{aid}", json={"name": "y" * 101}).status_code == 400
     assert c.patch(f"/api/admin/albums/{aid}", json={"name": "New", "hidden": True}).status_code == 200
     assert len(seen) == 1
+
+
+def test_corrupt_mutate_restart_keeps_photo_files(c, data_dir):
+    aid = new_album(c)
+    upload(c, aid, [("a.jpg", jpeg()), ("b.jpg", jpeg())])
+    before = sorted(p.name for p in (data_dir / "photos").iterdir())
+    (data_dir / "photos.json").write_text("garbage")
+    app2 = create_app(data_dir)
+    c2 = make_client(app2)
+    new_album(c2, "Fresh")  # writes a new photos.json
+    app3 = create_app(data_dir)  # restart
+    assert app3.state.photos.albums()[0].name == "Fresh"
+    after = sorted(p.name for p in (data_dir / "photos").iterdir() if p.is_file())
+    assert after == before
+    assert not (data_dir / "photos" / "orphans").exists()
+
+
+def test_unreadable_photos_json_is_not_overwritten(data_dir, monkeypatch):
+    (data_dir / "photos.json").write_text("{}")
+    real_replace = os.replace
+
+    def fail(src, dst):
+        if str(src).endswith("photos.json"):
+            raise OSError("nope")
+        return real_replace(src, dst)
+
+    real_read = type(data_dir).read_text
+
+    def bad_read(self, *a, **k):
+        if self.name == "photos.json":
+            raise PermissionError("denied")
+        return real_read(self, *a, **k)
+
+    monkeypatch.setattr(type(data_dir), "read_text", bad_read)
+    monkeypatch.setattr(os, "replace", fail)
+    store = PhotoStore(data_dir, create_app(data_dir).state.hub)
+    with pytest.raises(OSError):
+        store.create_album("x")
+    monkeypatch.undo()
+    assert (data_dir / "photos.json").read_text() == "{}"
+
+
+def test_unreadable_photos_json_moved_aside_when_possible(data_dir, monkeypatch):
+    (data_dir / "photos.json").write_text("{}")
+    real_read = type(data_dir).read_text
+
+    def bad_read(self, *a, **k):
+        if self.name == "photos.json":
+            raise PermissionError("denied")
+        return real_read(self, *a, **k)
+
+    monkeypatch.setattr(type(data_dir), "read_text", bad_read)
+    PhotoStore(data_dir, create_app(data_dir).state.hub)
+    assert len(list(data_dir.glob("photos.json.corrupt-*"))) == 1
+
+
+def test_zip_snapshot_taken_before_worker(c, app, monkeypatch):
+    aid = new_album(c, "A")
+    upload(c, aid, [("1.jpg", jpeg())])
+    import threading
+
+    main = threading.get_ident()
+    seen = {}
+    store = app.state.photos
+    real_snap, real_build = store.snapshot_for_zip, store.build_zip
+
+    def snap():
+        seen["snap"] = threading.get_ident()
+        return real_snap()
+
+    def build(s):
+        seen["build"] = threading.get_ident()
+        return real_build(s)
+
+    monkeypatch.setattr(store, "snapshot_for_zip", snap)
+    monkeypatch.setattr(store, "build_zip", build)
+    assert c.get("/api/admin/photos.zip").status_code == 200
+    assert seen["snap"] != seen["build"]  # snapshot on the event-loop thread, build on a worker

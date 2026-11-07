@@ -152,7 +152,9 @@ async def delete_photo(photo_id: str, request: Request) -> dict:
 
 @router.get("/api/admin/photos.zip")
 async def photos_zip(request: Request) -> StreamingResponse:
-    spool = await run_in_threadpool(_store(request).zip_stream)
+    store = _store(request)
+    snapshot = store.snapshot_for_zip()
+    spool = await run_in_threadpool(store.build_zip, snapshot)
     size = spool.seek(0, 2)
     spool.seek(0)
 

@@ -43,7 +43,8 @@ def _safe_dir_name(name: str, fallback: str) -> str:
     if not cleaned:
         return fallback
     if _RESERVED.fullmatch(cleaned):
-        cleaned += "_"
+        stem, dot, ext = cleaned.partition(".")
+        cleaned = f"{stem}_{dot}{ext}"
     return cleaned
 
 
@@ -57,6 +58,7 @@ class PhotoStore:
         self._tasks: set[asyncio.Task] = set()
         self._albums: list[Album] = []
         self._landscape: dict[str, bool] = {}
+        self._read_only = False
         self._load()
 
     # persistence
@@ -65,39 +67,59 @@ class PhotoStore:
         self._albums, self._landscape = [], {}
         try:
             text = self._json.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return
-        except OSError:
-            log.exception("cannot read %s; photo sweep skipped", self._json)
-            return
-        try:
             raw = json.loads(text)
             albums = [
                 Album(a["id"], a["name"], bool(a.get("hidden", False)), list(a.get("photo_ids", [])))
                 for a in raw.get("albums", [])
             ]
             landscape = {k: bool(v) for k, v in raw.get("landscape", {}).items()}
-        except (ValueError, KeyError, TypeError, AttributeError):
-            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-            aside = self._json.with_name(f"{self._json.name}.corrupt-{stamp}")
-            log.error("%s is corrupt; moved to %s and starting empty (photo sweep skipped)", self._json, aside)
-            try:
-                os.replace(self._json, aside)
-            except OSError:
-                log.exception("could not move corrupt photos.json aside")
+        except FileNotFoundError:
+            self._sweep()
+            return
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            self._set_aside()
+            self._sweep()
             return
         self._albums, self._landscape = albums, landscape
         self._sweep()
 
+    def _set_aside(self) -> None:
+        """Move an unreadable or corrupt photos.json aside and start empty; if that fails, refuse to write."""
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        aside = self._json.with_name(f"{self._json.name}.corrupt-{stamp}")
+        try:
+            os.replace(self._json, aside)
+        except OSError:
+            log.exception("%s is unreadable and could not be moved aside; photo store is read-only", self._json)
+            self._read_only = True
+            return
+        log.error("%s is corrupt; moved to %s and starting empty", self._json, aside)
+
     def _sweep(self) -> None:
-        """Remove leftover *.tmp files and photo files no album references."""
+        """Remove leftover *.tmp files; move unreferenced photo files to photos/orphans/ (never delete)."""
+        if self._read_only:
+            return
         known = {p for a in self._albums for p in a.photo_ids}
-        for f in self._dir.iterdir():
-            m = _PHOTO_FILE.fullmatch(f.name)
-            if f.name.endswith(".tmp") or (m and m.group(1) not in known):
+        quarantine = not any(self._json.parent.glob(self._json.name + ".corrupt-*"))
+        moved = 0
+        for f in list(self._dir.iterdir()):
+            if not f.is_file():
+                continue
+            if f.name.endswith(".tmp"):
                 f.unlink(missing_ok=True)
+                continue
+            m = _PHOTO_FILE.fullmatch(f.name)
+            if quarantine and m and m.group(1) not in known:
+                orphans = self._dir / "orphans"
+                orphans.mkdir(exist_ok=True)
+                os.replace(f, orphans / f.name)
+                moved += 1
+        if moved:
+            log.warning("moved %d unreferenced photo file(s) to %s", moved, self._dir / "orphans")
 
     def _save(self) -> None:
+        if self._read_only:
+            raise OSError("photos.json is unreadable; refusing to overwrite it")
         doc = {
             "albums": [
                 {"id": a.id, "name": a.name, "hidden": a.hidden, "photo_ids": a.photo_ids} for a in self._albums
@@ -266,12 +288,11 @@ class PhotoStore:
             for a in self._albums
         ]
 
-    def zip_stream(self) -> tempfile.SpooledTemporaryFile:
-        """Zip of display JPEGs as '{album}/{NNN}.jpg' in a spooled temp file, rewound to the start."""
-        snapshot = [(a.name, a.id, list(a.photo_ids)) for a in self._albums]
-        return self._build_zip(snapshot)
+    def snapshot_for_zip(self) -> list[tuple[str, str, list[str]]]:
+        """Copy album names/ids/photo lists; call on the event loop so the worker sees a stable view."""
+        return [(a.name, a.id, list(a.photo_ids)) for a in self._albums]
 
-    def _build_zip(self, snapshot: list[tuple[str, str, list[str]]]) -> tempfile.SpooledTemporaryFile:
+    def build_zip(self, snapshot: list[tuple[str, str, list[str]]]) -> tempfile.SpooledTemporaryFile:
         out = tempfile.SpooledTemporaryFile(max_size=ZIP_SPOOL_BYTES, dir=self._dir.parent)
         try:
             used: set[str] = set()
