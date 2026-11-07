@@ -21,6 +21,7 @@ CZECH_IMAGE_ERRORS = {
     "Image could not be read": "Obrázek nelze přečíst",
 }
 ZIP_CHUNK = 1024 * 1024
+MAX_ALBUM_NAME = 100
 
 
 def _is_czech(request: Request) -> bool:
@@ -44,6 +45,15 @@ class IdList(BaseModel):
 class MoveBody(BaseModel):
     album_id: str
     index: int
+
+
+def _clean_name(raw: str) -> str:
+    name = raw.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name required")
+    if len(name) > MAX_ALBUM_NAME:
+        raise HTTPException(status_code=400, detail=f"name too long (max {MAX_ALBUM_NAME})")
+    return name
 
 
 def _store(request: Request):
@@ -87,9 +97,7 @@ async def upload(
 
 @router.post("/api/admin/albums")
 async def create_album(body: AlbumCreate, request: Request) -> dict:
-    name = body.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="name required")
+    name = _clean_name(body.name)
     a = _store(request).create_album(name)
     return {"id": a.id, "name": a.name, "hidden": a.hidden, "photo_ids": a.photo_ids}
 
@@ -106,15 +114,10 @@ async def order_albums(body: IdList, request: Request) -> dict:
 @router.patch("/api/admin/albums/{album_id}")
 async def patch_album(album_id: str, body: AlbumPatch, request: Request) -> dict:
     store = _store(request)
-    name = body.name.strip() if body.name is not None else None
-    if name == "":
-        raise HTTPException(status_code=400, detail="name required")
+    name = _clean_name(body.name) if body.name is not None else None
     if all(a.id != album_id for a in store.albums()):
         raise HTTPException(status_code=404, detail="album not found")
-    if name is not None:
-        store.rename_album(album_id, name)
-    if body.hidden is not None:
-        store.set_hidden(album_id, body.hidden)
+    store.update_album(album_id, name=name, hidden=body.hidden)
     return {"ok": True}
 
 

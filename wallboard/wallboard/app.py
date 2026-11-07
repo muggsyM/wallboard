@@ -11,6 +11,7 @@ from fastapi import FastAPI
 
 from .actions import ActionHandler
 from .auth import LoginLimiter
+from .body_limit import BodyLimitMiddleware
 from .config import ConfigStore
 from .gcal import GoogleCalendarService
 from .google_oauth import OAuthStates, RedactCallbackParams
@@ -36,6 +37,7 @@ def create_app(data_dir: Path) -> FastAPI:
     if not any(isinstance(f, RedactCallbackParams) for f in access_log.filters):
         access_log.addFilter(RedactCallbackParams())
     app = FastAPI(title="wallboard", lifespan=_lifespan)
+    app.add_middleware(BodyLimitMiddleware)
     app.state.store = ConfigStore(Path(data_dir))
     app.state.login_limiter = LoginLimiter()
     app.state.oauth_states = OAuthStates(lambda: app.state.store.secrets.session_secret)

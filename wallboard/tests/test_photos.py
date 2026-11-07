@@ -214,3 +214,127 @@ def test_api_requires_admin(app):
     anon = make_client(app, admin=False)
     assert anon.get("/api/admin/photos").status_code == 401
     assert anon.get("/api/admin/photos.zip").status_code == 401
+
+
+# --- fix round 1 ---
+
+from starlette.formparsers import MultiPartParser  # noqa: E402
+
+from wallboard import body_limit  # noqa: E402
+from wallboard.photos import PhotoStore, _safe_dir_name  # noqa: E402
+
+
+def test_unauthenticated_upload_rejected_before_body_read(app, monkeypatch):
+    reads = []
+    orig = MultiPartParser.parse
+
+    async def spy(self):
+        reads.append(1)
+        return await orig(self)
+
+    monkeypatch.setattr(MultiPartParser, "parse", spy)
+    anon = make_client(app, admin=False)
+    r = anon.post("/api/admin/photos/upload", data={"album_id": "x"}, files=[("files[]", ("a.jpg", b"x" * 5000))])
+    assert r.status_code == 401 and r.json() == {"detail": "unauthorized"}
+    assert reads == []
+    assert anon.delete("/api/admin/photos/abc").status_code == 401
+
+
+def test_authenticated_upload_parses_body(c, monkeypatch):
+    reads = []
+    orig = MultiPartParser.parse
+
+    async def spy(self):
+        reads.append(1)
+        return await orig(self)
+
+    monkeypatch.setattr(MultiPartParser, "parse", spy)
+    aid = new_album(c)
+    assert upload(c, aid, [("a.jpg", jpeg())]).json()["results"][0]["ok"] is True
+    assert reads == [1]
+
+
+def test_content_length_over_cap_413(c):
+    big = {"Content-Length": str(body_limit.DEFAULT_MAX_BODY + 1)}
+    assert c.post("/api/admin/albums", content=b"x", headers=big).status_code == 413
+    assert make_client(c.app, admin=False).post("/login", content=b"x", headers=big).status_code == 413
+
+
+def test_chunked_body_over_cap_413(c, monkeypatch):
+    monkeypatch.setattr(body_limit, "DEFAULT_MAX_BODY", 100)
+
+    def gen():
+        for _ in range(5):
+            yield b"x" * 50
+
+    r = c.post("/api/admin/albums", content=gen(), headers={"Content-Type": "application/json"})
+    assert r.status_code == 413
+
+
+def test_login_still_works_under_limit(app):
+    r = make_client(app, admin=False).post("/login", data={"password": "x"}, follow_redirects=False)
+    assert r.status_code != 413
+
+
+def test_corrupt_photos_json_moved_aside(data_dir):
+    (data_dir / "photos.json").write_text("{not json")
+    (data_dir / "photos").mkdir()
+    orphan = data_dir / "photos" / ("a" * 32 + ".jpg")
+    orphan.write_bytes(b"x")
+    app = create_app(data_dir)
+    assert app.state.photos.albums() == []
+    moved = list(data_dir.glob("photos.json.corrupt-*"))
+    assert len(moved) == 1 and moved[0].read_text() == "{not json"
+    assert not (data_dir / "photos.json").exists()
+    assert orphan.exists()  # no sweep after a corrupt file
+
+
+def test_startup_sweep(c, app, data_dir):
+    aid = new_album(c)
+    upload(c, aid, [("a.jpg", jpeg())])
+    pid = photo_ids(c)[aid][0]
+    d = data_dir / "photos"
+    (d / "junk.jpg.tmp").write_bytes(b"x")
+    (d / f"{'b' * 32}.jpg").write_bytes(b"x")
+    (d / f"{'b' * 32}.thumb.jpg").write_bytes(b"x")
+    PhotoStore(data_dir, app.state.hub)
+    assert sorted(p.name for p in d.iterdir()) == sorted(f"{pid}{s}" for s in (".jpg", ".bg.jpg", ".thumb.jpg"))
+
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        (". .", "ID"),
+        ('a:b*c?d"e<f>g|h', "abcdefgh"),
+        ("CON", "CON_"),
+        ("nul.txt", "nul.txt_"),
+        ("com1", "com1_"),
+        ("  Trip  ", "Trip"),
+        ("\x00\x01", "ID"),
+    ],
+)
+def test_zip_name_sanitizing(name, expected):
+    assert _safe_dir_name(name, "ID") == expected
+
+
+def test_zip_skips_missing_files_and_numbers_written(c, app):
+    aid = new_album(c, "A")
+    upload(c, aid, [("1.jpg", jpeg()), ("2.jpg", jpeg()), ("3.jpg", jpeg())])
+    p1, p2, p3 = photo_ids(c)[aid]
+    app.state.photos.path(f"{p2}.jpg").unlink()
+    zf = zipfile.ZipFile(io.BytesIO(c.get("/api/admin/photos.zip").content))
+    assert zf.namelist() == ["A/001.jpg", "A/002.jpg"]
+
+
+def test_album_name_limits_and_single_patch_publish(c, app):
+    assert c.post("/api/admin/albums", json={"name": "x" * 101}).status_code == 400
+    aid = new_album(c, "x" * 100)
+    seen = []
+
+    async def spy(msg):
+        seen.append(msg)
+
+    app.state.hub._broadcast = spy
+    assert c.patch(f"/api/admin/albums/{aid}", json={"name": "y" * 101}).status_code == 400
+    assert c.patch(f"/api/admin/albums/{aid}", json={"name": "New", "hidden": True}).status_code == 200
+    assert len(seen) == 1

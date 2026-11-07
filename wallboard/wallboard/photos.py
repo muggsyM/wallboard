@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
+import re
 import tempfile
 import uuid
 import zipfile
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -20,6 +23,9 @@ from .imaging import process_image
 
 SUFFIXES = (".jpg", ".bg.jpg", ".thumb.jpg")
 ZIP_SPOOL_BYTES = 10 * 1024 * 1024
+log = logging.getLogger(__name__)
+_RESERVED = re.compile(r"(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?", re.IGNORECASE)
+_PHOTO_FILE = re.compile(r"([0-9a-f]{32})(\.bg|\.thumb)?\.jpg")
 
 
 @dataclass
@@ -31,10 +37,14 @@ class Album:
 
 
 def _safe_dir_name(name: str, fallback: str) -> str:
-    """Album name usable as a zip folder: no separators, '..' or control characters."""
-    cleaned = "".join(ch for ch in name if ch >= " " and ch != "\x7f" and ch not in "/\\")
-    cleaned = cleaned.replace("..", "").strip().strip(".")
-    return cleaned or fallback
+    """Album name usable as a zip folder on any OS; falls back to the album id."""
+    cleaned = "".join(ch for ch in name if ch >= " " and ch != "\x7f" and ch not in '/\\:*?"<>|')
+    cleaned = cleaned.replace("..", "").strip(" .")
+    if not cleaned:
+        return fallback
+    if _RESERVED.fullmatch(cleaned):
+        cleaned += "_"
+    return cleaned
 
 
 class PhotoStore:
@@ -52,15 +62,40 @@ class PhotoStore:
     # persistence
 
     def _load(self) -> None:
+        self._albums, self._landscape = [], {}
         try:
-            raw = json.loads(self._json.read_text(encoding="utf-8"))
-            self._albums = [
+            text = self._json.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return
+        except OSError:
+            log.exception("cannot read %s; photo sweep skipped", self._json)
+            return
+        try:
+            raw = json.loads(text)
+            albums = [
                 Album(a["id"], a["name"], bool(a.get("hidden", False)), list(a.get("photo_ids", [])))
                 for a in raw.get("albums", [])
             ]
-            self._landscape = {k: bool(v) for k, v in raw.get("landscape", {}).items()}
-        except (OSError, ValueError, KeyError, TypeError, AttributeError):
-            self._albums, self._landscape = [], {}
+            landscape = {k: bool(v) for k, v in raw.get("landscape", {}).items()}
+        except (ValueError, KeyError, TypeError, AttributeError):
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            aside = self._json.with_name(f"{self._json.name}.corrupt-{stamp}")
+            log.error("%s is corrupt; moved to %s and starting empty (photo sweep skipped)", self._json, aside)
+            try:
+                os.replace(self._json, aside)
+            except OSError:
+                log.exception("could not move corrupt photos.json aside")
+            return
+        self._albums, self._landscape = albums, landscape
+        self._sweep()
+
+    def _sweep(self) -> None:
+        """Remove leftover *.tmp files and photo files no album references."""
+        known = {p for a in self._albums for p in a.photo_ids}
+        for f in self._dir.iterdir():
+            m = _PHOTO_FILE.fullmatch(f.name)
+            if f.name.endswith(".tmp") or (m and m.group(1) not in known):
+                f.unlink(missing_ok=True)
 
     def _save(self) -> None:
         doc = {
@@ -118,13 +153,19 @@ class PhotoStore:
         self._commit()
         return Album(album.id, album.name, album.hidden, [])
 
-    def rename_album(self, album_id: str, name: str) -> None:
-        self._album(album_id).name = name
+    def update_album(self, album_id: str, name: str | None = None, hidden: bool | None = None) -> None:
+        album = self._album(album_id)
+        if name is not None:
+            album.name = name
+        if hidden is not None:
+            album.hidden = hidden
         self._commit()
 
+    def rename_album(self, album_id: str, name: str) -> None:
+        self.update_album(album_id, name=name)
+
     def set_hidden(self, album_id: str, hidden: bool) -> None:
-        self._album(album_id).hidden = hidden
-        self._commit()
+        self.update_album(album_id, hidden=hidden)
 
     def reorder_albums(self, ids: list[str]) -> None:
         by_id = {a.id: a for a in self._albums}
@@ -169,13 +210,17 @@ class PhotoStore:
             (self._dir / (photo_id + s)).unlink(missing_ok=True)
             (self._dir / (photo_id + s + ".tmp")).unlink(missing_ok=True)
 
+    def _process_and_write(self, data: bytes, photo_id: str):
+        processed = process_image(data)
+        self._write_files(photo_id, [processed.display, processed.background, processed.thumb])
+        return processed
+
     async def ingest(self, data: bytes, album_id: str) -> str:
         """Process one upload and append it to the album. Raises KeyError, UnsupportedImage."""
         async with self._lock:
             album = self._album(album_id)
-            processed = await run_in_threadpool(process_image, data)
             photo_id = uuid.uuid4().hex
-            self._write_files(photo_id, [processed.display, processed.background, processed.thumb])
+            processed = await run_in_threadpool(self._process_and_write, data, photo_id)
             album.photo_ids.append(photo_id)
             self._landscape[photo_id] = processed.landscape
             try:
@@ -223,19 +268,26 @@ class PhotoStore:
 
     def zip_stream(self) -> tempfile.SpooledTemporaryFile:
         """Zip of display JPEGs as '{album}/{NNN}.jpg' in a spooled temp file, rewound to the start."""
-        out = tempfile.SpooledTemporaryFile(max_size=ZIP_SPOOL_BYTES)
+        snapshot = [(a.name, a.id, list(a.photo_ids)) for a in self._albums]
+        return self._build_zip(snapshot)
+
+    def _build_zip(self, snapshot: list[tuple[str, str, list[str]]]) -> tempfile.SpooledTemporaryFile:
+        out = tempfile.SpooledTemporaryFile(max_size=ZIP_SPOOL_BYTES, dir=self._dir.parent)
         try:
             used: set[str] = set()
             with zipfile.ZipFile(out, "w", zipfile.ZIP_STORED, allowZip64=True) as zf:
-                for a in self._albums:
-                    folder = _safe_dir_name(a.name, a.id)
-                    if folder in used:
-                        folder = f"{folder} ({a.id[:8]})"
-                    used.add(folder)
-                    for n, pid in enumerate(a.photo_ids, 1):
-                        src = self._dir / f"{pid}.jpg"
-                        if src.is_file():
-                            zf.write(src, f"{folder}/{n:03d}.jpg")
+                for name, album_id, pids in snapshot:
+                    folder = _safe_dir_name(name, album_id)
+                    if folder.lower() in used:
+                        folder = f"{folder} ({album_id[:8]})"
+                    used.add(folder.lower())
+                    n = 0
+                    for pid in pids:
+                        try:
+                            zf.write(self._dir / f"{pid}.jpg", f"{folder}/{n + 1:03d}.jpg")
+                        except FileNotFoundError:
+                            continue
+                        n += 1
             out.seek(0)
             return out
         except BaseException:
