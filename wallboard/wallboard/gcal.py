@@ -33,6 +33,7 @@ CACHE_NAME = "calendar_cache.json"
 POLL_SECONDS = 300.0
 HTTP_TIMEOUT = 15.0
 CACHE_MAX_AGE = timedelta(hours=24)
+CACHE_REFRESH = timedelta(hours=6)  # rewrite an unchanged cache only when its fetched_at is this old
 MAX_PAGES = 50
 EVENT_KEYS = ('id', 'title', 'start', 'end', 'all_day')
 
@@ -137,7 +138,10 @@ class GoogleCalendarService:
         self._client: httpx.AsyncClient | None = None
         self._wake = asyncio.Event()
         self._task: asyncio.Task | None = None
-        self._saved: str | None = None  # last cache text on disk
+        # What the cache file on disk holds, to skip rewrites (SD card wear): its content without
+        # fetched_at, and each account's on-disk fetched_at.
+        self._saved_content: dict | None = None
+        self._saved_fetched: dict[str, str] = {}
 
     # ---- lifecycle ----
 
@@ -185,8 +189,8 @@ class GoogleCalendarService:
     def _load_cache(self) -> None:
         self._accounts = {}
         try:
-            text = self._cache_path.read_text(encoding="utf-8")
-            accounts = json.loads(text)["accounts"]
+            raw = json.loads(self._cache_path.read_text(encoding="utf-8"))
+            accounts = raw["accounts"]
             configured = {a.id for a in self.store.config.google_accounts}
             for account_id, entry in accounts.items():
                 # the old flat format ("events") is discarded
@@ -198,10 +202,11 @@ class GoogleCalendarService:
                     if isinstance(events, list)
                 }
                 self._accounts[account_id] = {"fetched_at": str(entry["fetched_at"]), "calendars": calendars}
+            range_ = (str(raw.get("range_start")), str(raw.get("range_end")))
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             self._accounts = {}
             return
-        self._saved = text
+        self._remember_saved(self._cache_content(*range_))
         self._expire()
 
     def _expire(self) -> None:
@@ -214,20 +219,41 @@ class GoogleCalendarService:
             if age >= CACHE_MAX_AGE:
                 del self._accounts[account_id]
 
+    def _cache_content(self, range_start: str, range_end: str) -> dict:
+        """The cache file's content minus fetched_at (deep-copied via JSON)."""
+        accounts = {a: e["calendars"] for a, e in self._accounts.items()}
+        return json.loads(json.dumps({"accounts": accounts, "range": [range_start, range_end]}))
+
+    def _remember_saved(self, content: dict) -> None:
+        self._saved_content = content
+        self._saved_fetched = {a: e["fetched_at"] for a, e in self._accounts.items()}
+
+    def _disk_fresh(self) -> bool:
+        """Is every on-disk fetched_at under CACHE_REFRESH old? (Keeps the 24 h expiry honest
+        after a restart.)"""
+        now = self._now()
+        for fetched in self._saved_fetched.values():
+            try:
+                if now - datetime.fromisoformat(fetched) >= CACHE_REFRESH:
+                    return False
+            except (ValueError, TypeError):
+                return False
+        return True
+
     def _save_cache(self, first: date, last: date) -> None:
+        content = self._cache_content(first.isoformat(), last.isoformat())
+        if content == self._saved_content and self._disk_fresh():
+            return  # same events and the file's fetched_at is recent enough
         data = {
             "accounts": self._accounts,
             "range_start": first.isoformat(),
             "range_end": last.isoformat(),
         }
-        text = json.dumps(data)
-        if text == self._saved:
-            return
         tmp = self._cache_path.with_name(CACHE_NAME + ".tmp")
         try:
-            tmp.write_text(text, encoding="utf-8")
+            tmp.write_text(json.dumps(data), encoding="utf-8")
             os.replace(tmp, self._cache_path)
-            self._saved = text
+            self._remember_saved(content)
         except OSError as e:
             log.warning("could not write calendar cache (%s)", type(e).__name__)
 

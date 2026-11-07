@@ -594,3 +594,46 @@ async def test_start_survives_failing_initial_publish(env, monkeypatch, caplog):
         assert "initial calendar publish failed" in caplog.text
     finally:
         await svc.stop()
+
+
+@respx.mock
+async def test_cache_not_rewritten_for_unchanged_events_under_6h(env):
+    a = mock_events("a@x.cz", [ev("1", "A-event")])
+    mock_events("b@x.cz", [ev("2", "B-event")])
+    svc = env.service()
+    await svc.poll_once()
+    path = env.store.data_dir / CACHE_NAME
+    written = path.read_text()
+
+    env.clock.t = NOW + timedelta(hours=5, minutes=59)
+    await svc.poll_once()  # same events, fetched_at newer: no write (SD card wear)
+    assert path.read_text() == written
+
+    env.clock.t = NOW + timedelta(hours=6)
+    await svc.poll_once()  # on-disk fetched_at is 6 h old: refresh it
+    rewritten = path.read_text()
+    assert rewritten != written
+    assert json.loads(rewritten)["accounts"]["A"]["fetched_at"] == env.clock.t.isoformat()
+
+    env.clock.t += timedelta(minutes=5)
+    a.mock(return_value=httpx.Response(200, json={"items": [ev("1", "A-changed")]}))
+    await svc.poll_once()  # content changed: written at once
+    assert "A-changed" in path.read_text()
+    await svc.stop()
+
+
+@respx.mock
+async def test_cache_freshness_tracked_from_loaded_file(env):
+    mock_events("a@x.cz", [ev("1", "A-event")])
+    mock_events("b@x.cz", [ev("2", "B-event")])
+    await env.service().poll_once()
+    path = env.store.data_dir / CACHE_NAME
+    written = path.read_text()
+    svc = env.service()  # a restart: loads the cache
+    await svc.start()
+    try:
+        env.clock.t = NOW + timedelta(hours=1)
+        await svc.poll_once()
+        assert path.read_text() == written
+    finally:
+        await svc.stop()
