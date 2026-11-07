@@ -8,6 +8,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from starlette.concurrency import run_in_threadpool
 
 from .. import auth
 
@@ -23,7 +24,7 @@ WRONG_PASSWORD_MSG = "Wrong password."
 
 def _login_page(request: Request, next_: str | None, error: str | None, status: int = 200) -> HTMLResponse:
     store = request.app.state.store
-    message = error
+    message = html.escape(error) if error else None
     if not store.secrets.admin_password_hash:
         message = NO_PASSWORD_MSG
     page = LOGIN_HTML.read_text(encoding="utf-8")
@@ -45,8 +46,18 @@ async def login_page(request: Request, next: str | None = None) -> HTMLResponse:
 @router.post("/login")
 async def login(request: Request, password: str = Form(""), next: str | None = None) -> Response:
     store = request.app.state.store
-    if not auth.verify_password(password, store.secrets.admin_password_hash):
+    limiter = request.app.state.login_limiter
+    ip = request.client.host if request.client else "unknown"
+    wait = limiter.retry_after(ip)
+    if wait:
+        resp = _login_page(request, next, f"Too many attempts. Try again in {wait} seconds.", status=429)
+        resp.headers["Retry-After"] = str(wait)
+        return resp
+    ok = await run_in_threadpool(auth.verify_password, password, store.secrets.admin_password_hash)
+    if not ok:
+        limiter.failure(ip)
         return _login_page(request, next, WRONG_PASSWORD_MSG, status=401)
+    limiter.success(ip)
     resp = RedirectResponse(auth.safe_next(next), status_code=303)
     resp.set_cookie(
         auth.COOKIE_NAME,

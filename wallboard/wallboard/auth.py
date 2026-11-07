@@ -6,6 +6,7 @@ import base64
 import binascii
 import hashlib
 import hmac
+import math
 import os
 import time
 from urllib.parse import quote
@@ -95,3 +96,43 @@ def require_loopback(request: Request) -> None:
     host = request.client.host if request.client else None
     if host not in LOOPBACK_HOSTS:
         raise HTTPException(status_code=403, detail="forbidden")
+
+
+class LoginLimiter:
+    """In-memory failed-login throttle per client IP.
+
+    After `max_failures` consecutive failures the IP is locked out for `lockout_seconds`;
+    each further lockout doubles the window, capped at `max_lockout`. Success resets the IP.
+    """
+
+    def __init__(
+        self,
+        max_failures: int = 5,
+        lockout_seconds: float = 30.0,
+        max_lockout: float = 900.0,
+        now=time.monotonic,
+    ) -> None:
+        self.max_failures = max_failures
+        self.lockout_seconds = lockout_seconds
+        self.max_lockout = max_lockout
+        self._now = now
+        self._state: dict[str, list] = {}  # ip -> [failures, locked_until, lockouts]
+
+    def retry_after(self, ip: str) -> int:
+        """Whole seconds until another attempt is allowed (0 if allowed now)."""
+        st = self._state.get(ip)
+        if not st:
+            return 0
+        return max(0, math.ceil(st[1] - self._now()))
+
+    def failure(self, ip: str) -> None:
+        st = self._state.setdefault(ip, [0, 0.0, 0])
+        st[0] += 1
+        if st[0] >= self.max_failures:
+            window = min(self.lockout_seconds * 2 ** st[2], self.max_lockout)
+            st[0] = 0
+            st[1] = self._now() + window
+            st[2] += 1
+
+    def success(self, ip: str) -> None:
+        self._state.pop(ip, None)

@@ -118,7 +118,7 @@ def test_logout_clears_cookie(data_dir):
     c.post("/login", data={"password": "hunter2"})
     r = c.post("/logout")
     assert r.status_code == 303 and r.headers["location"] == "/login"
-    assert 'wb_session=""' in r.headers["set-cookie"] or "Max-Age=0" in r.headers["set-cookie"]
+    assert "Max-Age=0" in r.headers["set-cookie"]
     assert c.get("/api/admin/config").status_code == 401
 
 
@@ -133,13 +133,13 @@ def test_require_loopback(data_dir, addr, status):
 
 
 def test_set_password_cli(data_dir):
-    answers = iter(["pw-one", "pw-one"])
+    answers = iter(["pw-one-long", "pw-one-long"])
     set_password(data_dir, getpass_fn=lambda prompt: next(answers))
     stored = ConfigStore(data_dir).secrets.admin_password_hash
-    assert auth.verify_password("pw-one", stored)
+    assert auth.verify_password("pw-one-long", stored)
 
 
-@pytest.mark.parametrize("answers", [["a", "b"], ["", ""]])
+@pytest.mark.parametrize("answers", [["abcdefgh", "abcdefgi"], ["", ""], ["short", "short"]])
 def test_set_password_cli_refuses_mismatch_and_empty(data_dir, answers):
     it = iter(answers)
     with pytest.raises(SystemExit):
@@ -148,7 +148,69 @@ def test_set_password_cli_refuses_mismatch_and_empty(data_dir, answers):
 
 
 def test_main_dispatches_set_password(data_dir, monkeypatch):
-    answers = iter(["x1", "x1"])
+    answers = iter(["x1-long-pw", "x1-long-pw"])
     monkeypatch.setattr("getpass.getpass", lambda prompt="": next(answers))
     main(["set-password", "--data", str(data_dir)])
     assert ConfigStore(data_dir).secrets.admin_password_hash
+
+
+def test_store_sees_out_of_process_secrets_change(data_dir):
+    first = ConfigStore(data_dir)
+    other = ConfigStore(data_dir)  # simulates the CLI process
+    other.save_secrets(other.secrets.model_copy(update={"admin_password_hash": "scrypt$new"}))
+    assert first.secrets.admin_password_hash == "scrypt$new"
+    other.save_config(other.config.model_copy(update={"rotation_seconds": 99}))
+    assert first.config.rotation_seconds == 99
+
+
+def test_login_after_out_of_process_password_set(data_dir):
+    _, c = make_client(data_dir, password=None)
+    assert "set-password" in c.get("/login").text
+    answers = iter(["fresh-password", "fresh-password"])
+    set_password(data_dir, getpass_fn=lambda prompt: next(answers))
+    assert c.post("/login", data={"password": "fresh-password"}).status_code == 303
+
+
+def test_password_change_invalidates_sessions(data_dir):
+    _, c = make_client(data_dir)
+    c.post("/login", data={"password": "hunter2"})
+    assert c.get("/api/admin/config").status_code == 200
+    answers = iter(["another-password", "another-password"])
+    set_password(data_dir, getpass_fn=lambda prompt: next(answers))
+    assert c.get("/api/admin/config").status_code == 401
+
+
+def test_short_session_secret_rejected():
+    from wallboard.config import Secrets
+
+    with pytest.raises(ValueError):
+        Secrets(session_secret="")
+
+
+def test_login_rate_limited(data_dir):
+    app, c = make_client(data_dir)
+    now = [1000.0]
+    app.state.login_limiter = auth.LoginLimiter(now=lambda: now[0])
+    for _ in range(5):
+        assert c.post("/login", data={"password": "bad"}).status_code == 401
+    r = c.post("/login", data={"password": "hunter2"})
+    assert r.status_code == 429
+    assert r.headers["retry-after"] == "30"
+    assert "wb_session" not in r.headers.get("set-cookie", "")
+    now[0] += 31
+    assert c.post("/login", data={"password": "hunter2"}).status_code == 303
+    for _ in range(4):  # count was reset by the success
+        assert c.post("/login", data={"password": "bad"}).status_code == 401
+
+
+def test_login_limiter_doubles_and_caps():
+    now = [0.0]
+    lim = auth.LoginLimiter(now=lambda: now[0])
+    waits = []
+    for _ in range(8):
+        for _ in range(5):
+            lim.failure("a")
+        waits.append(lim.retry_after("a"))
+        now[0] += waits[-1]
+    assert waits == [30, 60, 120, 240, 480, 900, 900, 900]
+    assert lim.retry_after("b") == 0

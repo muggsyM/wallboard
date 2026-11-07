@@ -7,7 +7,7 @@ import secrets as _secrets
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 
 class NightMode(BaseModel):
@@ -95,7 +95,7 @@ class Config(BaseModel):
 
 class Secrets(BaseModel):
     admin_password_hash: str | None = None
-    session_secret: str
+    session_secret: str = Field(min_length=32)
     ha_token: str | None = None
     google_client_id: str | None = None
     google_client_secret: str | None = None
@@ -119,33 +119,73 @@ def _atomic_write(path: Path, text: str, mode: int) -> None:
 
 
 class ConfigStore:
+    """On-disk store. `config` and `secrets` re-read their file when it changed on disk
+    (e.g. the set-password CLI ran while the server is up)."""
+
     def __init__(self, data_dir: Path) -> None:
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self._config_path = self.data_dir / "config.json"
         self._secrets_path = self.data_dir / "secrets.json"
+        self._config: Config | None = None
+        self._secrets: Secrets | None = None
+        self._config_sig: tuple[int, int] | None = None
+        self._secrets_sig: tuple[int, int] | None = None
 
         if self._config_path.exists():
-            self.config = Config.model_validate_json(self._config_path.read_text(encoding="utf-8"))
+            self._reload_config()
         else:
-            self.config = Config()
-            self.save_config(self.config)
+            self.save_config(Config())
 
         if self._secrets_path.exists():
-            self.secrets = Secrets.model_validate_json(self._secrets_path.read_text(encoding="utf-8"))
+            self._reload_secrets()
         else:
-            self.secrets = Secrets(session_secret=_secrets.token_urlsafe(32))
-            self.save_secrets(self.secrets)
+            self.save_secrets(Secrets(session_secret=_secrets.token_urlsafe(32)))
+
+    @staticmethod
+    def _sig(path: Path) -> tuple[int, int] | None:
+        try:
+            st = path.stat()
+        except FileNotFoundError:
+            return None
+        return (st.st_mtime_ns, st.st_size)
+
+    def _reload_config(self) -> None:
+        sig = self._sig(self._config_path)
+        self._config = Config.model_validate_json(self._config_path.read_text(encoding="utf-8"))
+        self._config_sig = sig
+
+    def _reload_secrets(self) -> None:
+        sig = self._sig(self._secrets_path)
+        self._secrets = Secrets.model_validate_json(self._secrets_path.read_text(encoding="utf-8"))
+        self._secrets_sig = sig
+
+    @property
+    def config(self) -> Config:
+        if self._sig(self._config_path) != self._config_sig:
+            self._reload_config()
+        assert self._config is not None
+        return self._config
+
+    @property
+    def secrets(self) -> Secrets:
+        if self._sig(self._secrets_path) != self._secrets_sig:
+            self._reload_secrets()
+        assert self._secrets is not None
+        return self._secrets
 
     def save_config(self, cfg: Config) -> None:
         # Re-validate so callers using model_copy(update=...) can't persist invalid state.
         cfg = Config.model_validate(cfg.model_dump())
         _atomic_write(self._config_path, cfg.model_dump_json(indent=2), 0o644)
-        self.config = cfg
+        self._config = cfg
+        self._config_sig = self._sig(self._config_path)
 
     def save_secrets(self, s: Secrets) -> None:
+        s = Secrets.model_validate(s.model_dump())
         _atomic_write(self._secrets_path, s.model_dump_json(indent=2), 0o600)
-        self.secrets = s
+        self._secrets = s
+        self._secrets_sig = self._sig(self._secrets_path)
 
     def public_config(self) -> dict[str, Any]:
         """Config as a JSON-able dict, safe to send to the display (no emails, no secrets)."""

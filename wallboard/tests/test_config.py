@@ -48,7 +48,7 @@ def test_public_config_has_no_secrets(data_dir):
         store.secrets.model_copy(
             update={
                 "admin_password_hash": "S3CRET",
-                "session_secret": "S3CRET",
+                "session_secret": "S3CRET" * 8,
                 "ha_token": "S3CRET",
                 "google_client_id": "S3CRET",
                 "google_client_secret": "S3CRET",

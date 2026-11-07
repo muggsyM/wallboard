@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import secrets
 import sys
 from pathlib import Path
 from typing import Callable
@@ -33,10 +34,17 @@ def set_password(data_dir: Path, getpass_fn: Callable[[str], str] | None = None)
     second = ask("Repeat password: ")
     if not first:
         sys.exit("Password must not be empty.")
+    if len(first) < 8:
+        sys.exit("Password must be at least 8 characters.")
     if first != second:
         sys.exit("Passwords do not match.")
     store = ConfigStore(Path(data_dir))
-    store.save_secrets(store.secrets.model_copy(update={"admin_password_hash": hash_password(first)}))
+    # A new session secret invalidates every existing login cookie.
+    store.save_secrets(
+        store.secrets.model_copy(
+            update={"admin_password_hash": hash_password(first), "session_secret": secrets.token_urlsafe(32)}
+        )
+    )
     print("Admin password updated.")
 
 
