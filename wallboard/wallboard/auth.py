@@ -10,7 +10,7 @@ import math
 import os
 import time
 from collections import deque
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import HTTPException, Request
 
@@ -93,9 +93,36 @@ def require_admin(request: Request) -> None:
     raise HTTPException(status_code=303, headers={"Location": f"/login?next={quote(path, safe='/')}"})
 
 
+_HOST_HEADERS = {"localhost", "127.0.0.1", "[::1]"}
+_ORIGIN_HOSTNAMES = {"localhost", "127.0.0.1", "::1"}
+
+
+def is_loopback_host_header(host: str | None) -> bool:
+    """True only for localhost / 127.0.0.1 / [::1], with or without a numeric :port."""
+    if not host:
+        return False
+    host = host.lower()
+    if host in _HOST_HEADERS:
+        return True
+    name, sep, port = host.rpartition(":")
+    return bool(sep) and port.isdigit() and name in _HOST_HEADERS
+
+
+def is_allowed_display_origin(origin: str | None) -> bool:
+    """No Origin (non-browser client) or an http(s) loopback origin on any port."""
+    if origin is None:
+        return True
+    try:
+        parts = urlsplit(origin)
+        parts.port  # raises ValueError on a bad port
+    except ValueError:
+        return False
+    return parts.scheme in ("http", "https") and (parts.hostname or "") in _ORIGIN_HOSTNAMES
+
+
 def require_loopback(request: Request) -> None:
     host = request.client.host if request.client else None
-    if host not in LOOPBACK_HOSTS:
+    if host not in LOOPBACK_HOSTS or not is_loopback_host_header(request.headers.get("host")):
         raise HTTPException(status_code=403, detail="forbidden")
 
 

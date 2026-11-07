@@ -16,7 +16,7 @@ def make_client(data_dir, password="hunter2", client=("testclient", 50000)):
     if password is not None:
         store = app.state.store
         store.save_secrets(store.secrets.model_copy(update={"admin_password_hash": auth.hash_password(password)}))
-    return app, TestClient(app, follow_redirects=False, client=client)
+    return app, TestClient(app, follow_redirects=False, client=client, base_url="http://localhost")
 
 
 def test_hash_verify():

@@ -6,6 +6,17 @@ from wallboard.app import create_app
 from wallboard.hub import Hub
 
 
+class LocalClient(TestClient):
+    """TestClient whose HTTP and WebSocket requests carry Host: localhost (WS hard-codes testserver)."""
+
+    def __init__(self, app, **kw):
+        super().__init__(app, base_url="http://localhost", **kw)
+
+    def websocket_connect(self, url, subprotocols=None, **kw):
+        kw["headers"] = {"host": "localhost", **kw.get("headers", {})}
+        return super().websocket_connect(url, subprotocols, **kw)
+
+
 @pytest.fixture
 def app(data_dir):
     return create_app(data_dir)
@@ -13,7 +24,7 @@ def app(data_dir):
 
 @pytest.fixture
 def client(app):
-    with TestClient(app, client=("127.0.0.1", 50000)) as c:
+    with LocalClient(app, client=("127.0.0.1", 50000)) as c:
         yield c
 
 
@@ -90,7 +101,7 @@ async def test_unknown_topic_rejected():
 
 
 def test_ws_rejects_non_loopback(app):
-    c = TestClient(app, client=("192.168.1.20", 50000))
+    c = LocalClient(app, client=("192.168.1.20", 50000))
     with c.websocket_connect("/ws") as ws:
         with pytest.raises(WebSocketDisconnect) as exc:
             ws.receive_json()
@@ -144,16 +155,66 @@ async def test_dead_socket_dropped():
 
 
 def test_index_loopback_only(app):
-    ok = TestClient(app, client=("127.0.0.1", 1)).get("/")
+    ok = LocalClient(app, client=("127.0.0.1", 1)).get("/")
     assert ok.status_code == 200
-    assert TestClient(app, client=("::1", 1)).get("/").status_code == 200
-    assert TestClient(app, client=("192.168.1.20", 1)).get("/").status_code == 403
+    assert LocalClient(app, client=("::1", 1)).get("/").status_code == 200
+    assert LocalClient(app, client=("192.168.1.20", 1)).get("/").status_code == 403
 
 
 def test_static_loopback_only(app):
-    ok = TestClient(app, client=("127.0.0.1", 1)).get("/static/display/index.html")
+    ok = LocalClient(app, client=("127.0.0.1", 1)).get("/static/display/index.html")
     assert ok.status_code == 200
-    bad = TestClient(app, client=("192.168.1.20", 1))
+    bad = LocalClient(app, client=("192.168.1.20", 1))
     assert bad.get("/static/display/index.html").status_code == 403
     assert bad.get("/static/shared/.gitkeep").status_code == 403
     assert bad.get("/static/shared/missing.js").status_code == 403
+
+
+def test_ws_rejects_foreign_origin(app):
+    with LocalClient(app, client=("127.0.0.1", 1)) as c:
+        with c.websocket_connect("/ws", headers={"origin": "http://evil.example"}) as ws:
+            with pytest.raises(WebSocketDisconnect) as exc:
+                ws.receive_json()
+    assert exc.value.code == 4403
+
+
+def test_ws_accepts_loopback_origin(app):
+    with LocalClient(app, client=("127.0.0.1", 1)) as c:
+        with c.websocket_connect("/ws", headers={"origin": "http://localhost:8080"}) as ws:
+            assert ws.receive_json()["type"] == "snapshot"
+
+
+def test_ws_rejects_evil_host(app):
+    with LocalClient(app, client=("127.0.0.1", 1)) as c:
+        with c.websocket_connect("/ws", headers={"host": "evil.example"}) as ws:
+            with pytest.raises(WebSocketDisconnect) as exc:
+                ws.receive_json()
+    assert exc.value.code == 4403
+
+
+def test_http_rejects_evil_host(app):
+    c = LocalClient(app, client=("127.0.0.1", 1))
+    evil = {"host": "evil.example"}
+    assert c.get("/", headers=evil).status_code == 403
+    assert c.get("/static/display/index.html", headers=evil).status_code == 403
+    assert c.get("/", headers={"host": "localhost:8080"}).status_code == 200
+
+
+def test_host_and_origin_helpers():
+    from wallboard.auth import is_allowed_display_origin as o
+    from wallboard.auth import is_loopback_host_header as h
+
+    assert all(h(x) for x in ["localhost", "localhost:8080", "127.0.0.1:8080", "[::1]", "[::1]:8080"])
+    bad_hosts = [None, "", "evil.example", "localhost.evil.com", "localhost:abc", "::1", "127.0.0.1.evil"]
+    assert not any(h(x) for x in bad_hosts)
+    assert all(o(x) for x in [None, "http://localhost:8080", "https://127.0.0.1", "http://[::1]:80"])
+    bad_origins = ["http://evil.example", "null", "file://localhost", "http://localhost.evil.com"]
+    assert not any(o(x) for x in bad_origins)
+
+
+def test_binary_frame_ignored(client):
+    with client.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        ws.send_bytes(b"\x00\x01")
+        ws.send_json({"type": "action", "id": "3", "entity_id": "light.a"})
+        assert ws.receive_json()["id"] == "3"

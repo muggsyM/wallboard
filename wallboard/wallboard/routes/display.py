@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request, WebSocket
 from fastapi.responses import FileResponse, PlainTextResponse
+from starlette.datastructures import Headers
 from starlette.staticfiles import StaticFiles
 from starlette.websockets import WebSocketDisconnect
 
@@ -26,7 +27,13 @@ class LoopbackStatic:
 
     async def __call__(self, scope, receive, send) -> None:
         client = scope.get("client")
-        if scope["type"] != "http" or not client or client[0] not in auth.LOOPBACK_HOSTS:
+        host = Headers(scope=scope).get("host") if scope["type"] == "http" else None
+        if (
+            scope["type"] != "http"
+            or not client
+            or client[0] not in auth.LOOPBACK_HOSTS
+            or not auth.is_loopback_host_header(host)
+        ):
             if scope["type"] == "http":
                 await PlainTextResponse("forbidden", status_code=403)(scope, receive, send)
             return
@@ -46,16 +53,24 @@ async def index() -> FileResponse:
 @router.websocket("/ws")
 async def display_ws(ws: WebSocket) -> None:
     await ws.accept()
-    if not ws.client or ws.client.host not in auth.LOOPBACK_HOSTS:
+    if (
+        not ws.client
+        or ws.client.host not in auth.LOOPBACK_HOSTS
+        or not auth.is_loopback_host_header(ws.headers.get("host"))
+        or not auth.is_allowed_display_origin(ws.headers.get("origin"))
+    ):
         await ws.close(code=WS_FORBIDDEN)
         return
     hub = ws.app.state.hub
     await hub.connect(ws)
     try:
         while True:
+            frame = await ws.receive()
+            if frame["type"] == "websocket.disconnect":
+                break
             try:
-                msg = json.loads(await ws.receive_text())
-            except ValueError:
+                msg = json.loads(frame["text"])
+            except (KeyError, TypeError, ValueError):
                 continue
             if not isinstance(msg, dict) or msg.get("type") != "action":
                 continue
