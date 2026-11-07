@@ -162,6 +162,62 @@ html, body {
   opacity: .55;
 }
 
+/* ---------- week page ---------- */
+.wb-page[data-page="week"] { gap: 3cqw; }
+.wb-week {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: repeat(7, minmax(0, 1fr));
+  gap: 1.6cqw;
+}
+.wb-wrow {
+  display: flex;
+  gap: 3cqw;
+  min-height: 0;
+  padding: 1.6cqw 2.4cqw;
+  border-radius: 2.6cqw;
+  background: rgba(255, 255, 255, .05);
+  overflow: hidden;
+}
+.wb-wrow.today {
+  background: rgba(79, 140, 255, .17);
+  box-shadow: inset 0 0 0 .4cqw rgba(79, 140, 255, .7);
+}
+.wb-wd { width: 14cqw; flex: none; }
+.wb-wd-n { font-size: 2.6cqw; letter-spacing: .4cqw; text-transform: uppercase; opacity: .7; font-weight: 500; }
+.wb-wrow.we .wb-wd-n { color: #ffb3c0; opacity: .9; }
+.wb-wd-d { font-size: 7.5cqw; font-weight: 300; line-height: 1; }
+.wb-wd-w { font-size: 2.6cqw; opacity: .8; margin-top: .6cqw; white-space: nowrap; }
+.wb-wd-w .mdi { color: var(--wb-accent-sun); font-size: 3.4cqw; margin-right: .6cqw; }
+.wb-chips {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .8cqw;
+  overflow: hidden;
+}
+.wb-chip {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  /* A little smaller than the mockup's 3.2cqw so three chips fit an equal-height row. */
+  font-size: 3cqw;
+  line-height: 1.15;
+  padding: .6cqw 1.6cqw;
+  border-left: 1cqw solid rgba(255, 255, 255, .4);
+  border-radius: 1.2cqw;
+  background: rgba(255, 255, 255, .07);
+  white-space: nowrap;
+}
+.wb-chip b { flex: none; font-weight: 500; margin-right: 1.4cqw; opacity: .85; font-variant-numeric: tabular-nums; }
+.wb-chip-ti { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.wb-chip.all { border-left: none; padding-left: 2.6cqw; color: #15171d; font-weight: 500; }
+.wb-chip.past { opacity: .4; }
+.wb-more { flex: none; margin-left: 1cqw; opacity: .6; }
+.wb-empty { font-size: 3cqw; opacity: .4; padding-top: 1cqw; }
+
 /* ---------- page dots ---------- */
 .wb-dots {
   position: absolute;

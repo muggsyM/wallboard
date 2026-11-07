@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -46,7 +47,10 @@ def create_app(data_dir: Path) -> FastAPI:
     app.state.photos = PhotoStore(Path(data_dir), app.state.hub)
     app.state.photos.start()
     app.state.ha = HAClient(app.state.store, app.state.hub)
-    app.state.gcal = GoogleCalendarService(app.state.store, app.state.hub)
+    dev_calendar = os.environ.get("WALLBOARD_DEV_CALENDAR")  # dev only: sample events, no Google
+    app.state.gcal = GoogleCalendarService(
+        app.state.store, app.state.hub, dev_calendar=Path(dev_calendar) if dev_calendar else None
+    )
     app.state.hub.on_action = ActionHandler(app.state.store, app.state.hub, app.state.ha).handle
     app.include_router(admin.router)
     app.include_router(photos_api.router)

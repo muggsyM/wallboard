@@ -1,0 +1,32 @@
+{
+  "_comment": "Dev only. Load with WALLBOARD_DEV_CALENDAR=dev/sample_calendar.json; the server then publishes these events instead of polling Google. 'day' is relative to today in config.timezone; timed events take local 'start'/'end' HH:MM (+ optional 'end_day'), all-day events take 'all_day': true and 'days' (default 1). member_id must match config.members ids (listed in member_ids); events of unknown members are skipped.",
+  "member_ids": ["dad", "mom", "tom", "anna", "fam"],
+  "events": [
+    {"day": 0, "all_day": true, "title": "Grandpa's birthday", "member_id": "fam"},
+    {"day": 0, "start": "06:00", "end": "06:30", "title": "Feed the cat", "member_id": "anna"},
+    {"day": 0, "start": "07:00", "end": "08:00", "title": "Morning run", "member_id": "dad"},
+    {"day": 0, "start": "09:00", "end": "11:00", "title": "Football match", "member_id": "tom", "location": "Sports hall Letňany"},
+    {"day": 0, "start": "14:30", "end": "15:15", "title": "Dentist", "member_id": "anna", "location": "Dr. Novák, Vinohradská 12"},
+    {"day": 0, "start": "18:00", "end": "21:00", "title": "Dinner at Grandma's", "member_id": "fam"},
+    {"day": 0, "start": "23:00", "end_day": 1, "end": "01:00", "title": "Stargazing", "member_id": "dad"},
+    {"day": 1, "start": "10:00", "end": "11:00", "title": "Swimming", "member_id": "tom"},
+    {"day": 1, "start": "15:00", "end": "18:00", "title": "Zoo", "member_id": "fam"},
+    {"day": 2, "start": "16:00", "end": "17:00", "title": "Piano lesson", "member_id": "anna"},
+    {"day": 2, "start": "19:00", "end": "20:00", "title": "Yoga", "member_id": "mom"},
+    {"day": 3, "all_day": true, "title": "Brno trip", "member_id": "dad"},
+    {"day": 3, "start": "15:30", "end": "17:00", "title": "Football training", "member_id": "tom"},
+    {"day": 4, "start": "08:00", "end": "13:00", "title": "School trip", "member_id": "anna"},
+    {"day": 4, "start": "12:00", "end": "13:00", "title": "Lunch with Petra", "member_id": "mom"},
+    {"day": 4, "start": "15:00", "end": "16:00", "title": "Haircut", "member_id": "tom"},
+    {"day": 4, "start": "17:00", "end": "18:30", "title": "Parents' evening", "member_id": "fam"},
+    {"day": 4, "start": "19:00", "end": "21:00", "title": "Book club", "member_id": "mom"},
+    {"day": 4, "start": "20:00", "end": "21:00", "title": "Call with the bank", "member_id": "dad"},
+    {"day": 4, "start": "21:00", "end": "22:00", "title": "Laundry", "member_id": "dad"},
+    {"day": 5, "start": "15:30", "end": "17:00", "title": "Football training", "member_id": "tom"},
+    {"day": 5, "all_day": true, "days": 3, "title": "Ski trip · Špindlerův Mlýn", "member_id": "fam"},
+    {"day": 6, "all_day": true, "title": "Mom off work", "member_id": "mom"},
+    {"day": 6, "start": "19:00", "end": "21:30", "title": "Movie night", "member_id": "fam"},
+    {"day": 13, "start": "18:00", "end": "19:30", "title": "Anna's piano recital", "member_id": "anna"},
+    {"day": 16, "start": "09:00", "end": "10:00", "title": "Car service", "member_id": "dad"}
+  ]
+}

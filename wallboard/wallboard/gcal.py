@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from . import google_oauth
-from .config import ConfigStore, Secrets
+from .config import ConfigStore, Member, Secrets
 from .events import display_range, normalize_google_event, to_json
 from .google_oauth import GoogleError, TokenCache
 from .hub import Hub
@@ -61,6 +61,42 @@ def _in_range(ev: dict, first: date, last: date, tz: ZoneInfo) -> bool:
     return start <= last and max(last_day, start) >= first
 
 
+def expand_dev_calendar(spec: dict, today: date, tz: ZoneInfo, members: list[Member]) -> list[dict]:
+    """Dev only: turn dev/sample_calendar.json (days relative to today) into EventJSON.
+
+    Each event: {"day": n, "title", "member_id", "location"?} plus either
+    {"start": "HH:MM", "end": "HH:MM", "end_day"?: n} (timed, local time in tz) or
+    {"all_day": true, "days"?: n} (n days, default 1). Events of unknown members are skipped.
+    """
+    by_id = {m.id: m for m in members}
+    out = []
+    for i, item in enumerate(spec.get("events", [])):
+        member = by_id.get(item.get("member_id"))
+        if member is None:
+            continue
+        day = today + timedelta(days=int(item.get("day", 0)))
+        if item.get("all_day"):
+            start: str = day.isoformat()
+            end: str = (day + timedelta(days=int(item.get("days", 1)))).isoformat()
+        else:
+            end_day = today + timedelta(days=int(item.get("end_day", item.get("day", 0))))
+            start = datetime.combine(day, time.fromisoformat(item["start"]), tzinfo=tz).isoformat()
+            end = datetime.combine(end_day, time.fromisoformat(item["end"]), tzinfo=tz).isoformat()
+        out.append(
+            {
+                "id": f"dev-{i}",
+                "title": item.get("title") or "",
+                "location": item.get("location"),
+                "start": start,
+                "end": end,
+                "all_day": bool(item.get("all_day")),
+                "member_id": member.id,
+                "color": member.color,
+            }
+        )
+    return out
+
+
 class GoogleCalendarService:
     def __init__(
         self,
@@ -71,8 +107,11 @@ class GoogleCalendarService:
         now: Callable[[], datetime] | None = None,
         token_cache: TokenCache | None = None,
         interval: float = POLL_SECONDS,
+        dev_calendar: Path | None = None,
     ) -> None:
         self.store = store
+        # Dev only: publish this sample file (see expand_dev_calendar) instead of polling Google.
+        self.dev_calendar = dev_calendar
         self.hub = hub
         self.status: dict[str, bool] = {}
         self._token_cache = token_cache or google_oauth.token_cache
@@ -89,6 +128,11 @@ class GoogleCalendarService:
     # ---- lifecycle ----
 
     async def start(self) -> None:
+        if self.dev_calendar is not None:
+            log.warning("dev calendar mode: publishing %s instead of Google Calendar", self.dev_calendar)
+            await self._publish_dev()
+            self._task = asyncio.create_task(self._run(), name="gcal-poll")
+            return
         self._load_cache()
         self.status = {a.id: False for a in self.store.config.google_accounts}
         await self._publish()
@@ -179,6 +223,9 @@ class GoogleCalendarService:
         return display_range(self._now().astimezone(self._tz()).date())
 
     async def poll_once(self) -> None:
+        if self.dev_calendar is not None:
+            await self._publish_dev()
+            return
         cfg = self.store.config
         tz = self._tz()
         first, last = self._range()
@@ -228,6 +275,21 @@ class GoogleCalendarService:
                 if event is not None:
                     events.append(to_json(event))
         return out
+
+    async def _publish_dev(self) -> None:
+        tz = self._tz()
+        first, last = self._range()
+        try:
+            spec = json.loads(Path(self.dev_calendar).read_text(encoding="utf-8"))
+            events = expand_dev_calendar(spec, self._now().astimezone(tz).date(), tz, self.store.config.members)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
+            log.warning("dev calendar unreadable (%s)", type(e).__name__)
+            events = []
+        events = [e for e in events if _in_range(e, first, last, tz)]
+        events.sort(key=lambda e: (e["start"], e["title"]))
+        payload = {"range_start": first.isoformat(), "range_end": last.isoformat(), "events": events, "holidays": {}}
+        await self.hub.publish({"type": "calendar", "calendar": payload})
+        await self.hub.set_status("google", {})
 
     async def _publish(self) -> None:
         first, last = self._range()
