@@ -431,3 +431,21 @@ def test_zip_snapshot_taken_before_worker(c, app, monkeypatch):
     monkeypatch.setattr(store, "build_zip", build)
     assert c.get("/api/admin/photos.zip").status_code == 200
     assert seen["snap"] != seen["build"]  # snapshot on the event-loop thread, build on a worker
+
+
+def test_sweep_failure_logs_not_raises(data_dir, monkeypatch, caplog):
+    (data_dir / "photos").mkdir()
+    (data_dir / "photos" / ("c" * 32 + ".jpg")).write_bytes(b"x")  # orphan to move
+    from wallboard import photos as photos_mod
+
+    real_replace = os.replace
+
+    def broken(src, dst):
+        if "orphans" in str(dst):
+            raise OSError("read-only file system")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(photos_mod.os, "replace", broken)
+    app = create_app(data_dir)  # must not raise
+    assert app.state.photos.albums() == []
+    assert "sweep" in caplog.text

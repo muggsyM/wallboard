@@ -334,3 +334,32 @@ async def test_forecast_uses_config_timezone(env, monkeypatch):
     await wait_for(lambda: env.client.connected)
     payload = await env.client.get_forecast()
     assert payload["daily"][0]["date"] == "2026-11-07"
+
+
+class FlakyStore:
+    """Wraps a ConfigStore; the first `fails` reads of `config` raise (a corrupt file)."""
+
+    def __init__(self, store, fails=1):
+        self._store = store
+        self.fails = fails
+
+    @property
+    def config(self):
+        if self.fails > 0:
+            self.fails -= 1
+            raise ValueError("config.json is corrupt")
+        return self._store.config
+
+    @property
+    def secrets(self):
+        return self._store.secrets
+
+
+async def test_ha_task_survives_corrupt_config(env, caplog):
+    client = HAClient(FlakyStore(env.store), env.hub, backoff_base=0.05, backoff_max=0.2, connect_timeout=1.0)
+    await client.start()
+    try:
+        await wait_for(lambda: client.connected)  # retried after the failed read, then connected
+        assert "ValueError" in caplog.text
+    finally:
+        await client.stop()

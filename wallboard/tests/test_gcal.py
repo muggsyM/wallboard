@@ -579,3 +579,18 @@ async def test_holidays_follow_language_on_next_publish(env):
     await svc.poll_once()
     assert env.published()["holidays"] == {"2026-10-28": "Independence Day", "2026-11-17": "Freedom and Democracy Day"}
     await svc.stop()
+
+
+async def test_start_survives_failing_initial_publish(env, monkeypatch, caplog):
+    svc = env.service()
+
+    async def broken(msg):
+        raise OSError("disk fault")
+
+    monkeypatch.setattr(env.hub, "publish", broken)
+    await svc.start()  # must not fail the app lifespan
+    try:
+        assert svc._task is not None and not svc._task.done()
+        assert "initial calendar publish failed" in caplog.text
+    finally:
+        await svc.stop()

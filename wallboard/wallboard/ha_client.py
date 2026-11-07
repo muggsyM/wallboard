@@ -197,12 +197,13 @@ class HAClient:
     async def _run(self) -> None:
         self._delay = self._backoff_base
         while True:
-            url = self._store.config.ha_url
-            token = self._store.secrets.ha_token
-            if not url or not token:
-                await self._hub.set_status("ha", False)
-                await asyncio.Event().wait()  # idle until restart() cancels us
             try:
+                # Inside the try: a store read that fails must not end this task silently.
+                url = self._store.config.ha_url
+                token = self._store.secrets.ha_token
+                if not url or not token:
+                    await self._hub.set_status("ha", False)
+                    await asyncio.Event().wait()  # idle until restart() cancels us
                 await self._session(_ws_url(url), token)
             except asyncio.CancelledError:
                 raise

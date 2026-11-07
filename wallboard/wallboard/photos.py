@@ -96,9 +96,17 @@ class PhotoStore:
         log.error("%s is corrupt; moved to %s and starting empty", self._json, aside)
 
     def _sweep(self) -> None:
-        """Remove leftover *.tmp files; move unreferenced photo files to photos/orphans/ (never delete)."""
+        """Remove leftover *.tmp files; move unreferenced photo files to photos/orphans/ (never delete).
+
+        Housekeeping only: a disk fault is logged, never raised, so it cannot stop the server."""
         if self._read_only:
             return
+        try:
+            self._sweep_files()
+        except OSError:
+            log.exception("photo folder sweep failed; continuing without it")
+
+    def _sweep_files(self) -> None:
         known = {p for a in self._albums for p in a.photo_ids}
         quarantine = not any(self._json.parent.glob(self._json.name + ".corrupt-*"))
         moved = 0

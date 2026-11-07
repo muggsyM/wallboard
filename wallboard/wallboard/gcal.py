@@ -147,9 +147,12 @@ class GoogleCalendarService:
             await self._publish_dev()
             self._task = asyncio.create_task(self._run(), name="gcal-poll")
             return
-        self._load_cache()
-        self.status = {a.id: False for a in self.store.config.google_accounts}
-        await self._publish()
+        try:
+            self._load_cache()
+            self.status = {a.id: False for a in self.store.config.google_accounts}
+            await self._publish()
+        except Exception as e:  # a disk or data fault must not fail the app lifespan
+            log.error("initial calendar publish failed (%s); polling anyway", type(e).__name__)
         self._task = asyncio.create_task(self._run(), name="gcal-poll")
 
     async def stop(self) -> None:

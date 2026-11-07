@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import secrets as _secrets
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, Field, ValidationError, ValidationInfo, field_validator
 from pydantic_core import PydanticCustomError
+
+log = logging.getLogger(__name__)
 
 
 class NightMode(BaseModel):
@@ -139,9 +143,32 @@ def _atomic_write(path: Path, text: str, mode: int) -> None:
     os.replace(tmp, path)
 
 
+def _short_error(e: Exception) -> str:
+    """A log-safe description: field locations and messages only, never input values (secrets)."""
+    if isinstance(e, ValidationError):
+        parts = []
+        for err in e.errors(include_input=False, include_url=False, include_context=False)[:5]:
+            loc = ".".join(str(p) for p in err.get("loc", ())) or "file"
+            parts.append(f"{loc}: {err.get('msg', err.get('type'))}")
+        return "; ".join(parts)
+    return type(e).__name__
+
+
+def _new_secrets() -> Secrets:
+    return Secrets(session_secret=_secrets.token_urlsafe(32))
+
+
 class ConfigStore:
     """On-disk store. `config` and `secrets` re-read their file when it changed on disk
-    (e.g. the set-password CLI ran while the server is up)."""
+    (e.g. the set-password CLI ran while the server is up).
+
+    A bad file never stops the server (the wall must not go dark):
+    - at startup, a corrupt or schema-invalid file is moved to `<name>.invalid-<UTC ts>` and
+      replaced with defaults; an unreadable one (e.g. permission denied) is left alone and
+      the store runs on in-memory defaults and refuses to write that file;
+    - at runtime, a file that fails to parse (an editor writing in place) is logged once and
+      the last good model is kept until the next valid write.
+    """
 
     def __init__(self, data_dir: Path) -> None:
         self.data_dir = Path(data_dir)
@@ -152,58 +179,121 @@ class ConfigStore:
         self._secrets: Secrets | None = None
         self._config_sig: tuple[int, int] | None = None
         self._secrets_sig: tuple[int, int] | None = None
+        self._config_read_only = False
+        self._secrets_read_only = False
 
-        if self._config_path.exists():
-            self._reload_config()
-        else:
-            self.save_config(Config())
+        self._config, self._config_read_only = self._startup_load(
+            self._config_path, Config, Config, self.save_config, "config.json is invalid; started with default settings"
+        )
+        self._secrets, self._secrets_read_only = self._startup_load(
+            self._secrets_path,
+            Secrets,
+            _new_secrets,
+            self.save_secrets,
+            "secrets.json is invalid; started with a new session secret and NO admin password, Home "
+            "Assistant token or Google sign-ins. Run `python -m wallboard set-password --data DIR` to "
+            "set the admin password, then enter the rest again in Settings",
+        )
 
-        if self._secrets_path.exists():
-            self._reload_secrets()
+    def _startup_load(self, path: Path, model: type, default, save, invalid_msg: str):
+        """Load `path` at startup; returns (model instance, read_only). Never raises for a bad file."""
+        if not path.exists():
+            obj = default()
+            save(obj)
+            return obj, False
+        sig = self._sig(path)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            text = None  # not text at all: treat as corrupt
+        except OSError as e:
+            log.error(
+                "%s is unreadable (%s); running on in-memory defaults and refusing to write it until "
+                "it is fixed and the service restarted",
+                path,
+                type(e).__name__,
+            )
+            return default(), True
+        try:
+            if text is None:
+                raise ValueError("not UTF-8 text")
+            obj = model.model_validate_json(text)
+        except ValueError as e:  # JSON or validation error (pydantic's ValidationError is a ValueError)
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            aside = path.with_name(f"{path.name}.invalid-{stamp}")
+            try:
+                os.replace(path, aside)
+            except OSError as move_err:
+                log.error(
+                    "%s is invalid (%s) and could not be moved aside (%s); running on in-memory "
+                    "defaults and refusing to write it",
+                    path,
+                    _short_error(e),
+                    type(move_err).__name__,
+                )
+                return default(), True
+            log.error("%s (%s); the bad file was moved to %s", invalid_msg, _short_error(e), aside.name)
+            obj = default()
+            save(obj)
+            return obj, False
+        if path == self._config_path:
+            self._config_sig = sig
         else:
-            self.save_secrets(Secrets(session_secret=_secrets.token_urlsafe(32)))
+            self._secrets_sig = sig
+        return obj, False
 
     @staticmethod
     def _sig(path: Path) -> tuple[int, int] | None:
         try:
             st = path.stat()
-        except FileNotFoundError:
+        except OSError:
             return None
         return (st.st_mtime_ns, st.st_size)
 
-    def _reload_config(self) -> None:
-        sig = self._sig(self._config_path)
-        self._config = Config.model_validate_json(self._config_path.read_text(encoding="utf-8"))
-        self._config_sig = sig
-
-    def _reload_secrets(self) -> None:
-        sig = self._sig(self._secrets_path)
-        self._secrets = Secrets.model_validate_json(self._secrets_path.read_text(encoding="utf-8"))
-        self._secrets_sig = sig
+    def _reload(self, path: Path, model: type, current):
+        """Runtime re-read after the file changed. On failure keep `current` and log once
+        (the caller records the new signature, so a bad file is not re-parsed on every access)."""
+        try:
+            return model.model_validate_json(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            log.error("%s changed but could not be loaded (%s); keeping the last good version", path, _short_error(e))
+            return current
 
     @property
     def config(self) -> Config:
-        if self._sig(self._config_path) != self._config_sig:
-            self._reload_config()
+        if not self._config_read_only:
+            sig = self._sig(self._config_path)
+            if sig != self._config_sig:
+                self._config_sig = sig
+                self._config = self._reload(self._config_path, Config, self._config)
         assert self._config is not None
         return self._config
 
     @property
     def secrets(self) -> Secrets:
-        if self._sig(self._secrets_path) != self._secrets_sig:
-            self._reload_secrets()
+        if not self._secrets_read_only:
+            sig = self._sig(self._secrets_path)
+            if sig != self._secrets_sig:
+                self._secrets_sig = sig
+                self._secrets = self._reload(self._secrets_path, Secrets, self._secrets)
         assert self._secrets is not None
         return self._secrets
 
     def save_config(self, cfg: Config) -> None:
         # Re-validate so callers using model_copy(update=...) can't persist invalid state.
         cfg = Config.model_validate(cfg.model_dump())
+        if self._config_read_only:
+            log.error("refusing to write %s: it was unreadable at startup", self._config_path)
+            raise OSError(f"{self._config_path.name} is unreadable; refusing to overwrite it")
         _atomic_write(self._config_path, cfg.model_dump_json(indent=2), 0o644)
         self._config = cfg
         self._config_sig = self._sig(self._config_path)
 
     def save_secrets(self, s: Secrets) -> None:
         s = Secrets.model_validate(s.model_dump())
+        if self._secrets_read_only:
+            log.error("refusing to write %s: it was unreadable at startup", self._secrets_path)
+            raise OSError(f"{self._secrets_path.name} is unreadable; refusing to overwrite it")
         _atomic_write(self._secrets_path, s.model_dump_json(indent=2), 0o600)
         self._secrets = s
         self._secrets_sig = self._sig(self._secrets_path)

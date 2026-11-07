@@ -116,7 +116,7 @@ If a calendar later shows **"Sign-in expired – sign in again"**, press *Connec
   sudo systemctl restart wallboard
   ```
 
-- **Editing the config file by hand** (`~/wallboard-data/config.json`) is possible but not needed. The Settings page applies changes live, but hand edits need `sudo systemctl restart wallboard`. If the file is invalid, **the service will not start**. Check `journalctl -u wallboard -e` to see why, then fix the file.
+- **Editing the config file by hand** (`~/wallboard-data/config.json`) is possible but not needed. The Settings page applies changes live, but hand edits need `sudo systemctl restart wallboard`. If the file is invalid when the service starts, the board still comes up: the bad file is renamed to `config.json.invalid-<date>` and default settings are used, so you can redo the settings in the Settings page or fix the renamed file and copy it back (`journalctl -u wallboard -e` says what was wrong). The same happens with `secrets.json`, but then the admin password, the Home Assistant token and the Google sign-ins are gone: set a new password with `set-password` (above) and enter the rest again in Settings. A file the service cannot read at all (wrong permissions) is never renamed; the board runs on defaults and refuses to save until you fix the permissions and restart. While the service is running, a half-saved or broken edit is ignored and the last good settings stay in use.
 
 ## Backup
 
