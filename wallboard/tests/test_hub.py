@@ -1,0 +1,159 @@
+import pytest
+from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
+
+from wallboard.app import create_app
+from wallboard.hub import Hub
+
+
+@pytest.fixture
+def app(data_dir):
+    return create_app(data_dir)
+
+
+@pytest.fixture
+def client(app):
+    with TestClient(app, client=("127.0.0.1", 50000)) as c:
+        yield c
+
+
+def test_snapshot_defaults():
+    snap = Hub().snapshot()
+    assert snap == {
+        "type": "snapshot", "config": None, "ha": {}, "calendar": None,
+        "weather": None, "photos": [], "status": {"ha": False, "google": {}},
+    }
+
+
+def test_snapshot_on_connect(app, client):
+    app.state.hub.set_topic("config", {"language": "en"})
+    app.state.hub.set_topic("ha", {"light.a": {"state": "on", "attributes": {}, "last_changed": "x"}})
+    with client.websocket_connect("/ws") as ws:
+        msg = ws.receive_json()
+    assert msg["type"] == "snapshot"
+    assert msg["config"] == {"language": "en"}
+    assert msg["ha"]["light.a"]["state"] == "on"
+
+
+def test_config_topic_set_at_startup(app):
+    assert app.state.hub.snapshot()["config"] == app.state.store.public_config()
+
+
+def test_ha_delta_updates_snapshot(app, client):
+    state = {"state": "on", "attributes": {}, "last_changed": "t"}
+    with client.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        client.portal.call(app.state.hub.publish, {"type": "ha", "entity_id": "light.a", "state": state})
+        assert ws.receive_json() == {"type": "ha", "entity_id": "light.a", "state": state}
+        with client.websocket_connect("/ws") as ws2:
+            assert ws2.receive_json()["ha"]["light.a"] == state
+        # state null deletes
+        client.portal.call(app.state.hub.publish, {"type": "ha", "entity_id": "light.a", "state": None})
+        assert ws.receive_json()["state"] is None
+    assert "light.a" not in app.state.hub.snapshot()["ha"]
+
+
+async def test_publish_replaces_topics():
+    hub = Hub()
+    await hub.publish({"type": "calendar", "calendar": {"events": []}})
+    await hub.publish({"type": "weather", "weather": {"current": {}}})
+    await hub.publish({"type": "photos", "photos": [{"id": "1"}]})
+    await hub.publish({"type": "config", "config": {"language": "cs"}})
+    snap = hub.snapshot()
+    assert snap["calendar"] == {"events": []}
+    assert snap["weather"] == {"current": {}}
+    assert snap["photos"] == [{"id": "1"}]
+    assert snap["config"] == {"language": "cs"}
+
+
+async def test_set_status_merges_and_broadcasts():
+    hub = Hub()
+    sent = []
+
+    class FakeWS:
+        async def send_json(self, m):
+            sent.append(m)
+
+    hub._sockets.add(FakeWS())
+    await hub.set_status("ha", True)
+    await hub.set_status("google", {"acc1": True})
+    assert sent[-1] == {"type": "status", "status": {"ha": True, "google": {"acc1": True}}}
+    assert hub.snapshot()["status"] == {"ha": True, "google": {"acc1": True}}
+
+
+async def test_unknown_topic_rejected():
+    hub = Hub()
+    with pytest.raises(ValueError):
+        hub.set_topic("bogus", 1)
+    with pytest.raises(ValueError):
+        await hub.publish({"type": "bogus"})
+
+
+def test_ws_rejects_non_loopback(app):
+    c = TestClient(app, client=("192.168.1.20", 50000))
+    with c.websocket_connect("/ws") as ws:
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_json()
+    assert exc.value.code == 4403
+
+
+def test_action_routed(app, client):
+    calls = []
+
+    async def on_action(entity_id, action_id):
+        calls.append((entity_id, action_id))
+        return {"type": "action_result", "id": "1", "ok": True, "error": None}
+
+    app.state.hub.on_action = on_action
+    with client.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "action", "id": "1", "entity_id": "light.a"})
+        assert ws.receive_json() == {"type": "action_result", "id": "1", "ok": True, "error": None}
+    assert calls == [("light.a", "1")]
+
+
+def test_action_without_handler(client):
+    with client.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "action", "id": "7", "entity_id": "light.a"})
+        assert ws.receive_json() == {"type": "action_result", "id": "7", "ok": False, "error": "not available"}
+
+
+def test_malformed_messages_ignored(client):
+    with client.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        ws.send_text("not json")
+        ws.send_json([1, 2])
+        ws.send_json({"type": "nope"})
+        ws.send_json({"type": "action", "id": 5})
+        ws.send_json({"type": "action", "id": "9", "entity_id": "light.a"})
+        assert ws.receive_json()["id"] == "9"
+
+
+async def test_dead_socket_dropped():
+    hub = Hub()
+
+    class Dead:
+        async def send_json(self, m):
+            raise RuntimeError("gone")
+
+    dead = Dead()
+    hub._sockets.add(dead)
+    await hub.publish({"type": "ha", "entity_id": "a.b", "state": None})
+    assert dead not in hub._sockets
+
+
+def test_index_loopback_only(app):
+    ok = TestClient(app, client=("127.0.0.1", 1)).get("/")
+    assert ok.status_code == 200
+    assert TestClient(app, client=("::1", 1)).get("/").status_code == 200
+    assert TestClient(app, client=("192.168.1.20", 1)).get("/").status_code == 403
+
+
+def test_static_loopback_only(app):
+    ok = TestClient(app, client=("127.0.0.1", 1)).get("/static/display/index.html")
+    assert ok.status_code == 200
+    bad = TestClient(app, client=("192.168.1.20", 1))
+    assert bad.get("/static/display/index.html").status_code == 403
+    assert bad.get("/static/shared/.gitkeep").status_code == 403
+    assert bad.get("/static/shared/missing.js").status_code == 403
