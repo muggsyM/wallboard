@@ -336,6 +336,12 @@ async def test_forecast_uses_config_timezone(env, monkeypatch):
     assert payload["daily"][0]["date"] == "2026-11-07"
 
 
+def test_mock_has_coffee_not_boiler():
+    # The owner put the boiler out of scope; the dev mock shows a coffee machine instead.
+    assert mock_ha.STATES["switch.coffee"]["a"]["friendly_name"] == "Coffee machine"
+    assert "switch.boiler" not in mock_ha.STATES
+
+
 class FlakyStore:
     """Wraps a ConfigStore; the first `fails` reads of `config` raise (a corrupt file)."""
 

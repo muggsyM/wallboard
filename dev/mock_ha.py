@@ -60,7 +60,7 @@ STATES = {
     "lock.front_door": {"s": "locked", "a": {"friendly_name": "Front door lock"}},
     "light.living": {"s": "on", "a": {"friendly_name": "Living", "brightness": 200}},
     "light.kids": {"s": "off", "a": {"friendly_name": "Kids"}},
-    "switch.boiler": {"s": "on", "a": {"friendly_name": "Boiler"}},
+    "switch.coffee": {"s": "on", "a": {"friendly_name": "Coffee machine"}},
 }
 
 

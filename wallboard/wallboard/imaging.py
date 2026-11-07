@@ -1,7 +1,6 @@
 """Photo processing: one upload becomes display, blurred background and thumbnail JPEGs."""
 
 import io
-import warnings
 from dataclasses import dataclass
 
 import pillow_heif
