@@ -197,6 +197,31 @@ def test_static_loopback_only(app):
     assert bad.get("/static/shared/missing.js").status_code == 403
 
 
+def test_fonts_and_icons_are_local(app):
+    """Ruling R27: no page depends on the network for fonts or icons."""
+    import re
+    from wallboard.routes.display import WEB_DIR
+
+    for page in [WEB_DIR / "display" / "index.html", *sorted((WEB_DIR / "admin").glob("*.html"))]:
+        html = page.read_text(encoding="utf-8")
+        assert not re.search(r"""(href|src)=["']?(https?:)?//""", html), page.name
+    c = LocalClient(app, client=("127.0.0.1", 1))
+    index = c.get("/").text
+    for url in re.findall(r'href="(/static/shared/vendor/[^"]+)"', index):
+        r = c.get(url)
+        assert r.status_code == 200, url
+        css = r.text
+        base = url.rsplit("/", 1)[0]
+        for ref in set(re.findall(r"url\(\"?([^\")?#]+)", css)):
+            if ref.endswith(".woff2"):
+                parts = (base + "/" + ref.removeprefix("./")).split("/")
+                while ".." in parts:  # resolve ../
+                    i = parts.index("..")
+                    del parts[i - 1 : i + 1]
+                assert c.get("/".join(parts)).status_code == 200, ref
+    assert len(re.findall(r'href="/static/shared/vendor/', index)) == 2
+
+
 def test_ws_rejects_foreign_origin(app):
     with LocalClient(app, client=("127.0.0.1", 1)) as c:
         with c.websocket_connect("/ws", headers={"origin": "http://evil.example"}) as ws:

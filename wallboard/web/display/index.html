@@ -4,13 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Wallboard</title>
-<!-- Fonts and icons come from the network. The media="print" swap keeps them from
-     blocking the first render, so the display still starts (system font, no icons)
-     when the Pi is offline. -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600&family=Roboto+Condensed:wght@400;500&display=swap" media="print" onload="this.media='all'">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" media="print" onload="this.media='all'">
+<!-- Fonts and icons are vendored (web/shared/vendor, ruling R27): a Pi that boots before
+     the router after a power cut still has its icons and Outfit. -->
+<link rel="stylesheet" href="/static/shared/vendor/fonts/fonts.css">
+<link rel="stylesheet" href="/static/shared/vendor/mdi/css/materialdesignicons.min.css">
 <link rel="stylesheet" href="/static/display/display.css">
 <script type="module" src="/static/display/shell.js"></script>
 </head>
