@@ -369,7 +369,167 @@ def test_calendars_route(env):
     assert (r.status_code, r.json()) == (409, {"detail": "sign-in expired"})
     del env.fail["A"]
     route.mock(return_value=httpx.Response(500))
-    assert c.get("/api/admin/google/A/calendars").status_code == 502
+    r = c.get("/api/admin/google/A/calendars")
+    assert r.status_code == 502 and "tok-" not in r.text
+
+
+@respx.mock
+async def test_disabled_calendar_dropped_from_kept_cache(env):
+    mock_events("a@x.cz", [ev("1", "A-event")])
+    mock_events("b@x.cz", [ev("2", "B-event")])
+    svc = env.service()
+    await svc.poll_once()
+    cfg = env.store.config
+    env.store.save_config(
+        cfg.model_copy(
+            update={
+                "calendars": [
+                    cfg.calendars[0].model_copy(update={"enabled": False}),
+                    cfg.calendars[1],
+                    CalendarRef(account_id="A", calendar_id="a2@x.cz", name="A2", member_id="anna"),
+                ]
+            }
+        )
+    )
+    env.fail["A"] = GoogleAuthExpired("A")
+    await svc.poll_once()
+    assert env.status()["A"] is False
+    assert env.titles() == ["B-event"]
+    await svc.stop()
+
+
+@respx.mock
+async def test_member_color_change_applies_without_fetch(env):
+    route = mock_events("a@x.cz", [ev("1", "A-event")])
+    mock_events("b@x.cz", [])
+    svc = env.service()
+    await svc.poll_once()
+    cfg = env.store.config
+    env.store.save_config(
+        cfg.model_copy(update={"members": [cfg.members[0].model_copy(update={"color": "#abcdef"}), cfg.members[1]]})
+    )
+    calls = route.call_count
+    await svc._publish()
+    assert route.call_count == calls
+    assert env.published()["events"][0]["color"] == "#abcdef"
+    await svc.stop()
+
+
+@respx.mock
+async def test_cached_account_not_in_config_not_published_on_start(env):
+    mock_events("a@x.cz", [ev("1", "A-event")])
+    mock_events("b@x.cz", [ev("2", "B-event")])
+    await env.service().poll_once()
+    cfg = env.store.config
+    env.store.save_config(
+        cfg.model_copy(
+            update={
+                "google_accounts": cfg.google_accounts[1:],
+                "calendars": cfg.calendars[1:],
+            }
+        )
+    )
+    hub2 = Hub()
+    svc = env.service(hub=hub2)
+    await svc.start()
+    try:
+        assert env.titles(hub2) == ["B-event"]
+        assert env.status(hub2) == {"B": False}
+    finally:
+        await svc.stop()
+
+
+@respx.mock
+async def test_repeated_page_token_and_page_cap(env):
+    env.only_calendar_a()
+    respx.get(f"{API}/calendars/a%40x.cz/events").mock(
+        return_value=httpx.Response(200, json={"items": [], "nextPageToken": "same"})
+    )
+    svc = env.service()
+    await svc.poll_once()
+    assert env.status()["A"] is False
+    counter = iter(range(1000))
+    respx.get(f"{API}/calendars/a%40x.cz/events").mock(
+        side_effect=lambda req: httpx.Response(200, json={"items": [], "nextPageToken": f"t{next(counter)}"})
+    )
+    await svc.poll_once()
+    assert env.status()["A"] is False
+    assert next(counter) <= 51
+    await svc.stop()
+
+
+@pytest.mark.parametrize("content", ["not json", "[]", '{"accounts": 5}', '{"accounts": {"A": 3}}'])
+async def test_garbage_cache_does_not_crash_start(env, content):
+    (env.store.data_dir / CACHE_NAME).write_text(content)
+    svc = env.service()
+    await svc.start()
+    try:
+        assert env.published()["events"] == []
+    finally:
+        await svc.stop()
+
+
+async def test_bad_cached_events_dropped_on_load(env):
+    good = {
+        "id": "1", "title": "Good", "location": None, "start": "2026-11-10", "end": "2026-11-11",
+        "all_day": True, "member_id": "anna", "color": "#111111",
+    }
+    data = {
+        "accounts": {
+            "A": {
+                "fetched_at": NOW.isoformat(),
+                "calendars": {"a@x.cz": [good, "junk", {"id": "2", "title": "no start"}]},
+            }
+        }
+    }
+    (env.store.data_dir / CACHE_NAME).write_text(json.dumps(data))
+    svc = env.service()
+    await svc.start()
+    try:
+        assert env.titles() == ["Good"]
+    finally:
+        await svc.stop()
+
+
+@respx.mock
+async def test_account_deleted_mid_fetch_not_stored(env):
+    env.only_calendar_a()
+
+    def handler(request):
+        cfg = env.store.config
+        env.store.save_config(cfg.model_copy(update={"google_accounts": cfg.google_accounts[1:], "calendars": []}))
+        return httpx.Response(200, json={"items": [ev("1", "Ghost")]})
+
+    respx.get(f"{API}/calendars/a%40x.cz/events").mock(side_effect=handler)
+    svc = env.service()
+    await svc.poll_once()
+    assert "A" not in svc._accounts and "A" not in svc.status
+    assert env.titles() == []
+    await svc.stop()
+
+
+@respx.mock
+async def test_no_cache_rewrite_when_unchanged(env):
+    env.store.save_config(env.store.config.model_copy(update={"google_accounts": [], "calendars": []}))
+    svc = env.service()
+    await svc.poll_once()
+    path = env.store.data_dir / CACHE_NAME
+    before = path.stat().st_mtime_ns
+    await svc.poll_once()
+    assert path.stat().st_mtime_ns == before
+    await svc.stop()
+
+
+@respx.mock
+async def test_second_401_invalidates_token_cache(env):
+    env.only_calendar_a()
+    respx.get(f"{API}/calendars/a%40x.cz/events").mock(return_value=httpx.Response(401))
+    cache = google_oauth.TokenCache()
+    svc = GoogleCalendarService(env.store, env.hub, token_fn=env.token_fn, now=env.clock, token_cache=cache)
+    cache.put("A", "stale", 1e12)
+    await svc.poll_once()
+    assert cache.get("A") is None
+    await svc.stop()
 
 
 def test_calendars_route_requires_admin(env):

@@ -32,12 +32,18 @@ CACHE_NAME = "calendar_cache.json"
 POLL_SECONDS = 300.0
 HTTP_TIMEOUT = 15.0
 CACHE_MAX_AGE = timedelta(hours=24)
+MAX_PAGES = 50
+EVENT_KEYS = ('id', 'title', 'start', 'end', 'all_day')
 
 TokenFn = Callable[[Secrets, str], Awaitable[str]]
 
 
 def _local_midnight(day: date, tz: ZoneInfo) -> str:
     return datetime.combine(day, time(0), tzinfo=tz).isoformat()
+
+
+def _valid_event(e: object) -> bool:
+    return isinstance(e, dict) and all(k in e for k in EVENT_KEYS)
 
 
 def _in_range(ev: dict, first: date, last: date, tz: ZoneInfo) -> bool:
@@ -78,6 +84,7 @@ class GoogleCalendarService:
         self._client: httpx.AsyncClient | None = None
         self._wake = asyncio.Event()
         self._task: asyncio.Task | None = None
+        self._saved: str | None = None  # last cache text on disk
 
     # ---- lifecycle ----
 
@@ -115,17 +122,25 @@ class GoogleCalendarService:
     # ---- cache ----
 
     def _load_cache(self) -> None:
+        self._accounts = {}
         try:
-            raw = json.loads(self._cache_path.read_text(encoding="utf-8"))
-            accounts = raw["accounts"]
-            self._accounts = {
-                k: {"fetched_at": v["fetched_at"], "events": list(v["events"])}
-                for k, v in accounts.items()
-                if isinstance(v, dict)
-            }
+            text = self._cache_path.read_text(encoding="utf-8")
+            accounts = json.loads(text)["accounts"]
+            configured = {a.id for a in self.store.config.google_accounts}
+            for account_id, entry in accounts.items():
+                # the old flat format ("events") is discarded
+                if account_id not in configured or not isinstance(entry.get("calendars"), dict):
+                    continue
+                calendars = {
+                    str(cal): [e for e in events if _valid_event(e)]
+                    for cal, events in entry["calendars"].items()
+                    if isinstance(events, list)
+                }
+                self._accounts[account_id] = {"fetched_at": str(entry["fetched_at"]), "calendars": calendars}
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             self._accounts = {}
             return
+        self._saved = text
         self._expire()
 
     def _expire(self) -> None:
@@ -144,10 +159,14 @@ class GoogleCalendarService:
             "range_start": first.isoformat(),
             "range_end": last.isoformat(),
         }
+        text = json.dumps(data)
+        if text == self._saved:
+            return
         tmp = self._cache_path.with_name(CACHE_NAME + ".tmp")
         try:
-            tmp.write_text(json.dumps(data), encoding="utf-8")
+            tmp.write_text(text, encoding="utf-8")
             os.replace(tmp, self._cache_path)
+            self._saved = text
         except OSError as e:
             log.warning("could not write calendar cache (%s)", type(e).__name__)
 
@@ -169,12 +188,16 @@ class GoogleCalendarService:
         self.status = {i: self.status.get(i, False) for i in ids}
         for account_id in ids:
             try:
-                events = await self._fetch_account(account_id, first, last, tz)
+                calendars = await self._fetch_account(account_id, first, last, tz)
             except Exception as e:  # GoogleError or anything else: never let one account stop the others
                 self._record_failure(account_id, e)
             else:
+                if account_id not in {a.id for a in self.store.config.google_accounts}:
+                    continue  # deleted while fetching
                 self.status[account_id] = True
-                self._accounts[account_id] = {"fetched_at": self._now().isoformat(), "events": events}
+                self._accounts[account_id] = {"fetched_at": self._now().isoformat(), "calendars": calendars}
+        current = {a.id for a in self.store.config.google_accounts}
+        self.status = {k: v for k, v in self.status.items() if k in current}
         self._expire()
         self._save_cache(first, last)
         await self._publish()
@@ -183,7 +206,7 @@ class GoogleCalendarService:
         self.status[account_id] = False
         log.warning("google calendar fetch failed for account %s (%s)", account_id, type(exc).__name__)
 
-    async def _fetch_account(self, account_id: str, first: date, last: date, tz: ZoneInfo) -> list[dict]:
+    async def _fetch_account(self, account_id: str, first: date, last: date, tz: ZoneInfo) -> dict[str, list[dict]]:
         cfg = self.store.config
         members = {m.id: m for m in cfg.members}
         params = {
@@ -193,27 +216,33 @@ class GoogleCalendarService:
             "timeMin": _local_midnight(first, tz),
             "timeMax": _local_midnight(last + timedelta(days=1), tz),
         }
-        out: list[dict] = []
+        out: dict[str, list[dict]] = {}
         for ref in cfg.calendars:
             member = members.get(ref.member_id)
             if ref.account_id != account_id or not ref.enabled or member is None:
                 continue
             url = f"{API}/calendars/{quote(ref.calendar_id, safe='')}/events"
+            events = out.setdefault(ref.calendar_id, [])
             async for item in self._paged(account_id, url, params):
                 event = normalize_google_event(item, member, tz)
                 if event is not None:
-                    out.append(to_json(event))
+                    events.append(to_json(event))
         return out
 
     async def _publish(self) -> None:
         first, last = self._range()
         tz = self._tz()
-        events = [
-            e
-            for entry in self._accounts.values()
-            for e in entry["events"]
-            if _in_range(e, first, last, tz)
-        ]
+        cfg = self.store.config
+        members = {m.id: m for m in cfg.members}
+        events = []
+        for ref in cfg.calendars:
+            member = members.get(ref.member_id)
+            entry = self._accounts.get(ref.account_id)
+            if not ref.enabled or member is None or entry is None:
+                continue
+            for e in entry["calendars"].get(ref.calendar_id, []):
+                if _in_range(e, first, last, tz):
+                    events.append({**e, "member_id": member.id, "color": member.color})
         events.sort(key=lambda e: (e["start"], e["title"]))
         payload = {
             "range_start": first.isoformat(),
@@ -242,6 +271,8 @@ class GoogleCalendarService:
                 self._token_cache.invalidate(account_id)
                 continue
             break
+        if resp.status_code == 401:
+            self._token_cache.invalidate(account_id)
         if resp.status_code != 200:
             raise GoogleError(f"Google request failed (HTTP {resp.status_code})")
         try:
@@ -254,7 +285,8 @@ class GoogleCalendarService:
 
     async def _paged(self, account_id: str, url: str, params: dict):
         page: str | None = None
-        while True:
+        seen: set[str] = set()
+        for _ in range(MAX_PAGES):
             q = {**params, "pageToken": page} if page else params
             body = await self._get(account_id, url, q)
             for item in body.get("items") or []:
@@ -262,6 +294,10 @@ class GoogleCalendarService:
             page = body.get("nextPageToken")
             if not page:
                 return
+            if page in seen:
+                raise GoogleError("Google returned a repeated page token")
+            seen.add(page)
+        raise GoogleError("Google returned too many pages")
 
     async def list_calendars(self, account_id: str) -> list[dict]:
         out = []
