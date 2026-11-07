@@ -75,3 +75,12 @@ test("loadLanguage uses injected fetch", async () => {
   setLanguage("cs");
   assert.equal(getLanguage(), "cs");
 });
+
+test("invalid timezone falls back to Europe/Prague instead of breaking fmt", (tc) => {
+  const warn = tc.mock.method(console, "warn", () => {});
+  setLanguage("cs");
+  setTimezone("Bad/Zone");
+  assert.equal(fmtTime(new Date("2026-11-06T23:05:00Z")), "00:05");
+  assert.equal(warn.mock.callCount(), 1);
+  setTimezone("Europe/Prague");
+});

@@ -7,7 +7,9 @@ import secrets as _secrets
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from zoneinfo import ZoneInfo
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class NightMode(BaseModel):
@@ -67,8 +69,9 @@ def _default_pages() -> list[PageRef]:
 class Config(BaseModel):
     language: Literal["cs", "en"] = "cs"
     timezone: str = "Europe/Prague"
-    rotation_seconds: int = 30
-    touch_pause_seconds: int = 120
+    # >= 5 s so a pending tile action (5 s timeout) is never paged away.
+    rotation_seconds: int = Field(30, ge=5)
+    touch_pause_seconds: int = Field(120, ge=5)
     night: NightMode = NightMode()
     members: list[Member] = []
     google_accounts: list[GoogleAccount] = []
@@ -81,6 +84,15 @@ class Config(BaseModel):
     quick_tiles: list[str] = []  # <= 4 entity_ids, each must be in tiles
     pages: list[PageRef] = _default_pages()
     photos_shuffle: bool = False
+
+    @field_validator("timezone")
+    @classmethod
+    def _check_timezone(cls, v: str) -> str:
+        try:
+            ZoneInfo(v)
+        except (ValueError, KeyError, OSError):  # ZoneInfoNotFoundError is a KeyError
+            raise ValueError(f"unknown timezone: {v!r}") from None
+        return v
 
     @model_validator(mode="after")
     def _check_quick_tiles(self) -> Config:

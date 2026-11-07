@@ -29,8 +29,15 @@ export function getLanguage() {
   return lang;
 }
 
+// An unknown zone would make every Intl formatter throw (blank display), so fall back.
 export function setTimezone(tz) {
   timezone = tz || "Europe/Prague";
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: timezone });
+  } catch {
+    console.warn(`i18n: unknown timezone "${timezone}", using Europe/Prague`);
+    timezone = "Europe/Prague";
+  }
 }
 
 export function locale() {

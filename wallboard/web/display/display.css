@@ -45,8 +45,9 @@ html, body {
   background-size: cover;
   background-position: center;
   opacity: 0;
+  /* No permanent will-change: the transition promotes the layer only while it runs
+     (saves ~16 MB GPU memory on the Pi). */
   transition: opacity 1.8s ease;
-  will-change: opacity;
 }
 .wb-bg-layer.on { opacity: 1; }
 .wb-bg-veil {

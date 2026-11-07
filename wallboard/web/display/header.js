@@ -5,8 +5,9 @@
 //     no titleKey -> "today" layout: larger clock, long date, subtitle under the weather
 //     titleKey    -> smaller clock, bold title with the subtitle beside it
 //
-// Clocks are any element with data-clock="time" | "date"; one shared timer refreshes
-// them all on the minute boundary (the night overlay uses it too).
+// Clocks are any element with data-clock="time" | "date" (the night overlay too). The
+// shell calls refreshClocks() from its 1 s tick: no minute timer to drift when NTP steps
+// the Pi's clock after boot, and unchanged text is skipped, so it is cheap.
 import { t, fmtTime, fmtLongDate } from "../shared/i18n.js";
 import { WEATHER_ICONS } from "../shared/ha-format.js";
 
@@ -24,18 +25,6 @@ export function refreshClocks(root = document) {
     const text = clockText(el.dataset.clock, now);
     if (el.textContent !== text) el.textContent = text;
   }
-}
-
-let clockStarted = false;
-// setTimeout to the next minute boundary, then every 60 s.
-export function startClock() {
-  if (clockStarted) return;
-  clockStarted = true;
-  const now = Date.now();
-  setTimeout(() => {
-    refreshClocks();
-    setInterval(refreshClocks, 60000);
-  }, 60000 - (now % 60000) + 50);
 }
 
 export function isOffline(state) {
@@ -81,5 +70,4 @@ export function renderHeader(el, state, { titleKey, subtitle } = {}) {
     el.classList.toggle("wb-header-today", !titleKey);
     el.innerHTML = html;
   }
-  startClock();
 }

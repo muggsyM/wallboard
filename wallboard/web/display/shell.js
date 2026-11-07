@@ -13,13 +13,18 @@ import {
 } from "../shared/i18n.js";
 import { createStore } from "./store.js";
 import { createPhoto } from "./photo.js";
-import { refreshClocks, startClock, isOffline } from "./header.js";
+import { refreshClocks, isOffline } from "./header.js";
 import { getPage } from "./pages/registry.js";
 import { Rotator } from "./lib/rotation.js";
 import { isNight } from "./lib/night.js";
 import { classifyGesture } from "./lib/gesture.js";
+import { pageOptions } from "./lib/page-options.js";
 
 const PAGE_FADE_MS = 600; // matches .wb-page transition in display.css
+// Config validation already requires >= 5 s; clamp again so a pending tile action
+// (5 s timeout) can never be paged away.
+const MIN_SECONDS = 5;
+const atLeastMin = (v, fallback) => Math.max(MIN_SECONDS, Number(v) > 0 ? Number(v) : fallback);
 
 function parseDevHash(hash) {
   const params = new URLSearchParams(hash.replace(/^#/, ""));
@@ -30,7 +35,6 @@ const DEV = parseDevHash(location.hash);
 const fmt = { fmtTime, fmtLongDate, fmtWeekdayShort, fmtMonthYear, fmtShortDayMonth, fmtNumber };
 const store = createStore({ url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws` });
 const photo = createPhoto();
-const ctx = { store, t, fmt, photo };
 
 const app = document.getElementById("app");
 const stage = document.getElementById("stage");
@@ -49,11 +53,13 @@ let gesture = null;
 
 // Page types from config that the registry knows; unknown ones are skipped with a warning.
 function knownPages(config) {
-  return (config.pages || []).filter((p) => {
-    if (getPage(p.type)) return true;
-    console.warn(`wallboard: unknown page type "${p.type}" skipped`);
-    return false;
-  });
+  return (config.pages || [])
+    .filter((p) => {
+      if (getPage(p.type)) return true;
+      console.warn(`wallboard: unknown page type "${p.type}" skipped`);
+      return false;
+    })
+    .map((p) => (p.seconds > 0 ? { ...p, seconds: atLeastMin(p.seconds) } : p));
 }
 
 async function applyConfig(config) {
@@ -72,8 +78,8 @@ async function applyConfig(config) {
   const keepType = rotator?.current()?.type;
   rotator = new Rotator({
     pages: knownPages(config),
-    defaultSeconds: config.rotation_seconds,
-    pauseSeconds: config.touch_pause_seconds,
+    defaultSeconds: atLeastMin(config.rotation_seconds, 30),
+    pauseSeconds: atLeastMin(config.touch_pause_seconds, 120),
     now: Date.now(),
   });
   if (!devPageApplied && DEV.page) {
@@ -99,7 +105,8 @@ function mountCurrent(animate) {
     stage.appendChild(el);
     let inst;
     try {
-      inst = mod.mount(el, ctx);
+      // ctx.options: the module's settings defaults overlaid with this page's config options.
+      inst = mod.mount(el, { store, t, fmt, photo, options: pageOptions(mod, page) });
     } catch (err) {
       console.error(`wallboard: page "${page.type}" failed to mount`, err);
       inst = { update() {}, destroy() {} };
@@ -148,8 +155,11 @@ function setNight(on) {
   app.classList.toggle("night", on);
 }
 
+// Every second: clocks (header + night; skipped when the text is unchanged), night mode,
+// rotation. Clocks follow the wall clock, so an NTP step after boot is picked up at once.
 function tick() {
   const now = Date.now();
+  refreshClocks();
   const config = store.get().config;
   if (!config || !rotator) return;
   setNight(now >= wakeUntil && isNight(now, config.night, config.timezone));
@@ -181,7 +191,7 @@ store.subscribe((state, change) => {
 app.addEventListener("pointerdown", (e) => {
   if (!e.isPrimary) return;
   const now = Date.now();
-  const pauseMs = (store.get().config?.touch_pause_seconds ?? 120) * 1000;
+  const pauseMs = atLeastMin(store.get().config?.touch_pause_seconds, 120) * 1000;
   wakeUntil = now + pauseMs;
   rotator?.touch(now);
   if (nightOn) {
@@ -204,6 +214,5 @@ app.addEventListener("pointerup", (e) => {
 app.addEventListener("pointercancel", () => (gesture = null));
 app.addEventListener("contextmenu", (e) => e.preventDefault());
 
-startClock();
 setInterval(tick, 1000);
 store.connect();

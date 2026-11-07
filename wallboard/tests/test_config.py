@@ -75,3 +75,17 @@ def test_quick_tiles_must_be_tiles():
         Config(tiles=tiles, quick_tiles=[t.entity_id for t in tiles])
     ok = Config(tiles=tiles, quick_tiles=["light.l0"])
     assert ok.quick_tiles == ["light.l0"]
+
+
+def test_timezone_must_be_valid():
+    assert Config(timezone="America/New_York").timezone == "America/New_York"
+    for bad in ("Europe/Praha", "", "../etc/passwd"):
+        with pytest.raises(ValidationError):
+            Config(timezone=bad)
+
+
+@pytest.mark.parametrize("field", ["rotation_seconds", "touch_pause_seconds"])
+def test_rotation_and_pause_at_least_5(field):
+    assert getattr(Config(**{field: 5}), field) == 5
+    with pytest.raises(ValidationError):
+        Config(**{field: 4})

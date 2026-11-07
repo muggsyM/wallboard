@@ -30,6 +30,7 @@ export function createPhoto() {
   let loadToken = 0;
 
   function show(item) {
+    if (item && item.id === currentId) return; // must not cancel a load in flight
     const token = ++loadToken;
     if (!item) {
       currentId = null;
@@ -37,7 +38,6 @@ export function createPhoto() {
       root.classList.remove("has-photo");
       return;
     }
-    if (item.id === currentId) return;
     // Decode before fading so the swap never shows a half-loaded image.
     const img = new Image();
     img.onload = () => {
