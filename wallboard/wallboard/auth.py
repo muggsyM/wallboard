@@ -99,11 +99,16 @@ def require_loopback(request: Request) -> None:
 
 
 class LoginLimiter:
-    """In-memory failed-login throttle per client IP.
+    """In-memory login-attempt throttle per client IP.
 
-    After `max_failures` consecutive failures the IP is locked out for `lockout_seconds`;
-    each further lockout doubles the window, capped at `max_lockout`. Success resets the IP.
+    `begin()` is synchronous and counts the attempt up front (as a presumed failure), so
+    concurrent requests cannot all slip past the check while verification is in flight.
+    The `max_failures`-th attempt is admitted but triggers a lockout of `lockout_seconds`;
+    each further lockout doubles the window, capped at `max_lockout`. `success()` resets the IP.
     """
+
+    MAX_ENTRIES = 1024
+    _MAX_EXPONENT = 20
 
     def __init__(
         self,
@@ -116,7 +121,15 @@ class LoginLimiter:
         self.lockout_seconds = lockout_seconds
         self.max_lockout = max_lockout
         self._now = now
-        self._state: dict[str, list] = {}  # ip -> [failures, locked_until, lockouts]
+        # ip -> [attempts, locked_until, lockouts, last_seen]
+        self._state: dict[str, list] = {}
+
+    def _prune(self, now: float) -> None:
+        stale = [ip for ip, st in self._state.items() if st[1] <= now and now - st[3] > self.max_lockout]
+        for ip in stale:
+            del self._state[ip]
+        while len(self._state) >= self.MAX_ENTRIES:
+            del self._state[next(iter(self._state))]  # oldest inserted/touched first
 
     def retry_after(self, ip: str) -> int:
         """Whole seconds until another attempt is allowed (0 if allowed now)."""
@@ -125,14 +138,23 @@ class LoginLimiter:
             return 0
         return max(0, math.ceil(st[1] - self._now()))
 
-    def failure(self, ip: str) -> None:
-        st = self._state.setdefault(ip, [0, 0.0, 0])
+    def begin(self, ip: str) -> int:
+        """Reserve an attempt. Returns 0 if admitted, else seconds to wait (attempt refused)."""
+        now = self._now()
+        self._prune(now)
+        st = self._state.pop(ip, None) or [0, 0.0, 0, now]
+        self._state[ip] = st  # re-insert: most recently touched last
+        st[3] = now
+        if st[1] > now:
+            return math.ceil(st[1] - now)
         st[0] += 1
         if st[0] >= self.max_failures:
-            window = min(self.lockout_seconds * 2 ** st[2], self.max_lockout)
+            st[1] = now + self.max_lockout  # fail closed if the arithmetic below raises
+            window = min(self.lockout_seconds * 2 ** min(st[2], self._MAX_EXPONENT), self.max_lockout)
+            st[1] = now + window
             st[0] = 0
-            st[1] = self._now() + window
             st[2] += 1
+        return 0
 
     def success(self, ip: str) -> None:
         self._state.pop(ip, None)

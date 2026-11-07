@@ -1,3 +1,4 @@
+import asyncio
 import time
 
 import pytest
@@ -209,8 +210,54 @@ def test_login_limiter_doubles_and_caps():
     waits = []
     for _ in range(8):
         for _ in range(5):
-            lim.failure("a")
+            lim.begin("a")
         waits.append(lim.retry_after("a"))
         now[0] += waits[-1]
     assert waits == [30, 60, 120, 240, 480, 900, 900, 900]
     assert lim.retry_after("b") == 0
+
+
+def test_limiter_begin_admits_only_max_without_resolution():
+    lim = auth.LoginLimiter(now=lambda: 0.0)
+    admitted = [lim.begin("a") == 0 for _ in range(10)]
+    assert admitted == [True] * 5 + [False] * 5
+
+
+def test_limiter_exponent_clamped():
+    now = [0.0]
+    lim = auth.LoginLimiter(now=lambda: now[0])
+    lim._state["a"] = [4, 0.0, 10_000, 0.0]
+    assert lim.begin("a") == 0
+    assert lim.retry_after("a") == 900
+
+
+def test_limiter_prunes_stale_and_caps_size():
+    now = [0.0]
+    lim = auth.LoginLimiter(now=lambda: now[0])
+    lim.begin("old")
+    now[0] = 10_000
+    lim.begin("new")
+    assert "old" not in lim._state
+    for i in range(auth.LoginLimiter.MAX_ENTRIES + 50):
+        lim.begin(f"ip{i}")
+    assert len(lim._state) <= auth.LoginLimiter.MAX_ENTRIES
+
+
+async def test_concurrent_wrong_logins_run_at_most_five_verifications(data_dir, monkeypatch):
+    import httpx
+
+    app, _ = make_client(data_dir)
+    calls = []
+    real = auth.verify_password
+
+    def spy(pw, stored):
+        calls.append(pw)
+        return real(pw, stored)
+
+    monkeypatch.setattr(auth, "verify_password", spy)
+    transport = httpx.ASGITransport(app=app, client=("10.0.0.9", 1234))
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as ac:
+        rs = await asyncio.gather(*[ac.post("/login", data={"password": "bad"}) for _ in range(12)])
+    assert len(calls) <= 5
+    assert sorted(r.status_code for r in rs).count(401) <= 5
+    assert any(r.status_code == 429 for r in rs)

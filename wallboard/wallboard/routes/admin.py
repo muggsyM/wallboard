@@ -48,14 +48,13 @@ async def login(request: Request, password: str = Form(""), next: str | None = N
     store = request.app.state.store
     limiter = request.app.state.login_limiter
     ip = request.client.host if request.client else "unknown"
-    wait = limiter.retry_after(ip)
+    wait = limiter.begin(ip)  # synchronous reservation, before any await
     if wait:
         resp = _login_page(request, next, f"Too many attempts. Try again in {wait} seconds.", status=429)
         resp.headers["Retry-After"] = str(wait)
         return resp
     ok = await run_in_threadpool(auth.verify_password, password, store.secrets.admin_password_hash)
     if not ok:
-        limiter.failure(ip)
         return _login_page(request, next, WRONG_PASSWORD_MSG, status=401)
     limiter.success(ip)
     resp = RedirectResponse(auth.safe_next(next), status_code=303)
