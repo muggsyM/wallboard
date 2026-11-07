@@ -1,0 +1,136 @@
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=Roboto+Condensed:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" rel="stylesheet">
+<style>
+  .wrapm{display:flex;gap:32px;align-items:flex-start;flex-wrap:wrap}
+  .scr{position:relative;aspect-ratio:9/16;width:min(560px,100%);border-radius:12px;overflow:hidden;color:#fff;
+       font-family:'Outfit',system-ui,sans-serif;container-type:inline-size;box-shadow:0 10px 34px rgba(0,0,0,.4)}
+  .bg{position:absolute;inset:0;background-size:cover;background-position:center}
+  .veil{position:absolute;inset:0;background:linear-gradient(170deg,rgba(14,17,24,.88),rgba(14,17,24,.95))}
+  .in{position:absolute;inset:4.4cqw 3.4cqw 3.4cqw;display:flex;flex-direction:column;gap:2.4cqw}
+  .hdr{display:flex;justify-content:space-between;align-items:flex-start;padding:0 1cqw}
+  .clock{font-weight:200;font-size:13cqw;line-height:.85}
+  .title{font-size:6cqw;font-weight:300;line-height:1;margin-top:1.4cqw}.title b{font-weight:500}
+  .wx{display:flex;align-items:center;gap:1.4cqw;justify-content:flex-end}
+  .wx .mdi{font-size:7cqw;color:#ffd36b}.wx .tmp{font-size:7cqw;font-weight:200}
+  .people{display:flex;gap:1.2cqw;justify-content:flex-end;margin-top:1.4cqw}
+  .people span{width:5.4cqw;height:5.4cqw;border-radius:50%;display:grid;place-items:center;font-size:2.4cqw;font-weight:600;border:.4cqw solid #7be0a5}
+  .people span.away{border-color:rgba(255,255,255,.3);opacity:.5}
+  .legend{display:flex;justify-content:space-between;font-size:2.5cqw;opacity:.85;padding:0 1cqw}
+  .legend i{display:inline-block;width:2cqw;height:2cqw;border-radius:50%;margin-right:.8cqw;vertical-align:-.2cqw}
+  .tom{--c:#4f8cff}.anna{--c:#e0607e}.dad{--c:#2bb3a0}.mom{--c:#f0a23b}.fam{--c:#8c6cf0}
+  .legend i,.people span{background:var(--c)}
+
+  .mg{flex:1;display:grid;grid-template-columns:repeat(7,1fr);grid-template-rows:auto repeat(6,1fr);gap:.7cqw;min-height:0}
+  .mg .h{font-size:2.3cqw;text-transform:uppercase;letter-spacing:.3cqw;opacity:.6;text-align:center;font-weight:500;padding-bottom:.4cqw}
+  .c{background:rgba(255,255,255,.06);border-radius:1.2cqw;padding:.8cqw .6cqw;display:flex;flex-direction:column;gap:.5cqw;overflow:hidden;min-height:0;min-width:0}
+  .c .n{font-size:2.9cqw;font-weight:500;padding-left:.3cqw;display:flex;justify-content:space-between;align-items:center}
+  .c .n .mdi{font-size:2.6cqw;color:#ffd36b;font-weight:400}
+  .c.out{opacity:.28}.c.past{opacity:.5}.c.we{background:rgba(255,255,255,.035)}.c.we .n{color:#ffc2cc}
+  .c.today{background:rgba(79,140,255,.24);box-shadow:inset 0 0 0 .45cqw #4f8cff}
+  .c.today .n span{background:#4f8cff;border-radius:1cqw;padding:0 1cqw;color:#fff}
+  /* event line inside a day */
+  .e{font-family:'Roboto Condensed','Outfit',sans-serif;font-size:2.15cqw;line-height:1.18;padding:.25cqw .5cqw;border-left:.7cqw solid var(--c);
+     background:rgba(255,255,255,.07);border-radius:.4cqw;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+  .e b{font-weight:500;opacity:.8}
+  .e.all{background:var(--c);border-left:none;font-weight:500;-webkit-line-clamp:1}
+  .e.cont{border-radius:0;margin:0 -.95cqw;padding-left:1.4cqw;-webkit-line-clamp:1}
+  .e.start{border-radius:.4cqw 0 0 .4cqw;margin-right:-.95cqw}
+  .e.end{border-radius:0 .4cqw .4cqw 0;margin-left:-.95cqw;color:transparent}
+  .e.cont.mid{color:transparent}
+  .more{font-size:2cqw;opacity:.65;padding-left:.5cqw;margin-top:auto}
+  .hol{font-size:2cqw;color:#ffb3c0;line-height:1.1;padding-left:.3cqw}
+  .dots{display:flex;gap:1.4cqw;justify-content:center}
+  .dots span{width:1.6cqw;height:1.6cqw;border-radius:50%;background:rgba(255,255,255,.3)}
+  .dots span.on{background:#fff;width:4.6cqw;border-radius:1cqw}
+  .notes{max-width:380px;font-size:14px;line-height:1.5}
+  .notes li{margin-bottom:8px}
+</style>
+
+<h2>Month page with text in every day</h2>
+<p class="subtitle">The grid now uses the whole height. Each day lists its events with time and title (up to 3, then "+N more"). Trips spanning days are one continuous bar. Drawn at the real 9:16 shape.</p>
+
+<div class="wrapm">
+<div class="scr">
+  <div class="bg" style="background-image:url('https://picsum.photos/id/1018/900/1600')"></div><div class="veil"></div>
+  <div class="in">
+    <div class="hdr">
+      <div><div class="clock">7:42</div><div class="title"><b>November</b> 2026</div></div>
+      <div><div class="wx"><i class="mdi mdi-weather-partly-cloudy"></i><span class="tmp">8°</span></div>
+        <div class="people"><span class="dad">D</span><span class="mom">M</span><span class="tom away">T</span><span class="anna">A</span></div></div>
+    </div>
+    <div class="legend"><span><i class="dad"></i>Dad</span><span><i class="mom"></i>Mom</span><span><i class="tom"></i>Tom</span><span><i class="anna"></i>Anna</span><span><i class="fam"></i>Family</span></div>
+
+    <div class="mg">
+      <div class="h">Mo</div><div class="h">Tu</div><div class="h">We</div><div class="h">Th</div><div class="h">Fr</div><div class="h">Sa</div><div class="h">Su</div>
+
+      <!-- Oct 26 – Nov 1 -->
+      <div class="c out"><div class="n"><span>26</span></div></div>
+      <div class="c out"><div class="n"><span>27</span></div></div>
+      <div class="c out"><div class="n"><span>28</span></div><div class="hol">State holiday</div></div>
+      <div class="c out"><div class="n"><span>29</span></div></div>
+      <div class="c out"><div class="n"><span>30</span></div></div>
+      <div class="c out we"><div class="n"><span>31</span></div></div>
+      <div class="c past we"><div class="n"><span>1</span></div><div class="e fam"><b>16:00</b> Halloween party</div></div>
+
+      <!-- Nov 2 – 8 -->
+      <div class="c past"><div class="n"><span>2</span></div><div class="e anna"><b>16:00</b> Piano</div><div class="e mom"><b>19:00</b> Yoga</div></div>
+      <div class="c past"><div class="n"><span>3</span></div><div class="e tom"><b>15:30</b> Football</div></div>
+      <div class="c past"><div class="n"><span>4</span></div><div class="e mom"><b>19:00</b> Book club</div></div>
+      <div class="c past"><div class="n"><span>5</span></div><div class="e tom"><b>15:30</b> Football</div></div>
+      <div class="c past"><div class="n"><span>6</span></div><div class="e dad"><b>08:00</b> Car service</div></div>
+      <div class="c today we"><div class="n"><span>7</span><i class="mdi mdi-weather-partly-cloudy"></i></div><div class="e all fam">Grandpa's b-day</div><div class="e tom"><b>09:00</b> Football match</div><div class="e anna"><b>14:30</b> Dentist</div><div class="more">+2 more</div></div>
+      <div class="c we"><div class="n"><span>8</span><i class="mdi mdi-weather-cloudy"></i></div><div class="e tom"><b>10:00</b> Swimming</div><div class="e fam"><b>15:00</b> Zoo</div></div>
+
+      <!-- Nov 9 – 15 -->
+      <div class="c"><div class="n"><span>9</span><i class="mdi mdi-weather-rainy"></i></div><div class="e anna"><b>16:00</b> Piano</div><div class="e mom"><b>19:00</b> Yoga</div></div>
+      <div class="c"><div class="n"><span>10</span><i class="mdi mdi-weather-sunny"></i></div><div class="e all dad">Brno trip</div><div class="e tom"><b>15:30</b> Football</div></div>
+      <div class="c"><div class="n"><span>11</span><i class="mdi mdi-weather-partly-cloudy"></i></div><div class="e anna"><b>13:00</b> School trip</div><div class="e fam"><b>17:00</b> Parents' evening</div><div class="more">+3 more</div></div>
+      <div class="c"><div class="n"><span>12</span><i class="mdi mdi-weather-cloudy"></i></div><div class="e tom"><b>15:30</b> Football</div><div class="e dad"><b>18:00</b> Haircut</div></div>
+      <div class="c"><div class="n"><span>13</span><i class="mdi mdi-weather-snowy-rainy"></i></div><div class="e all mom">Mom off</div><div class="e fam"><b>19:00</b> Movie night</div></div>
+      <div class="c we"><div class="n"><span>14</span></div><div class="e anna"><b>11:00</b> Lena's party</div></div>
+      <div class="c we"><div class="n"><span>15</span></div><div class="e tom"><b>10:00</b> Swimming</div></div>
+
+      <!-- Nov 16 – 22 -->
+      <div class="c"><div class="n"><span>16</span></div><div class="e anna"><b>16:00</b> Piano</div></div>
+      <div class="c"><div class="n"><span>17</span></div><div class="hol">Freedom Day</div><div class="e fam"><b>10:00</b> Hike Karlštejn</div></div>
+      <div class="c"><div class="n"><span>18</span></div><div class="e mom"><b>19:00</b> Yoga</div></div>
+      <div class="c"><div class="n"><span>19</span></div><div class="e tom"><b>15:30</b> Football</div><div class="e mom"><b>17:00</b> Vet – Max</div></div>
+      <div class="c"><div class="n"><span>20</span></div><div class="e all fam start">Ski weekend</div></div>
+      <div class="c we"><div class="n"><span>21</span></div><div class="e all fam cont mid">·</div></div>
+      <div class="c we"><div class="n"><span>22</span></div><div class="e all fam end">·</div></div>
+
+      <!-- Nov 23 – 29 -->
+      <div class="c"><div class="n"><span>23</span></div><div class="e anna"><b>16:00</b> Piano</div></div>
+      <div class="c"><div class="n"><span>24</span></div><div class="e dad"><b>07:30</b> Dentist</div></div>
+      <div class="c"><div class="n"><span>25</span></div><div class="e mom"><b>19:00</b> Yoga</div></div>
+      <div class="c"><div class="n"><span>26</span></div><div class="e tom"><b>15:30</b> Football</div></div>
+      <div class="c"><div class="n"><span>27</span></div><div class="e anna"><b>18:00</b> Piano recital</div></div>
+      <div class="c we"><div class="n"><span>28</span></div><div class="e fam"><b>14:00</b> Advent market</div></div>
+      <div class="c we"><div class="n"><span>29</span></div><div class="e fam"><b>16:00</b> 1st Advent candle</div></div>
+
+      <!-- Nov 30 – Dec 6 -->
+      <div class="c"><div class="n"><span>30</span></div><div class="e anna"><b>16:00</b> Piano</div></div>
+      <div class="c out"><div class="n"><span>1</span></div></div>
+      <div class="c out"><div class="n"><span>2</span></div></div>
+      <div class="c out"><div class="n"><span>3</span></div></div>
+      <div class="c out"><div class="n"><span>4</span></div></div>
+      <div class="c out we"><div class="n"><span>5</span></div><div class="e fam">St Nicholas Eve</div></div>
+      <div class="c out we"><div class="n"><span>6</span></div></div>
+    </div>
+    <div class="dots"><span></span><span></span><span class="on"></span><span></span></div>
+  </div>
+</div>
+
+<div class="notes">
+  <h3>What changed</h3>
+  <ul>
+    <li><b>Every day has its text:</b> start time and title, wrapping to 2 lines, with the person's colour on the left edge.</li>
+    <li><b>Up to 3 entries per day</b>, then "+N more". Busy days stay readable instead of shrinking the text.</li>
+    <li><b>All-day events</b> are solid colour; a trip over several days is one continuous bar (ski weekend 20–22).</li>
+    <li><b>Weather icons</b> on the days that have a forecast (about the next week).</li>
+    <li>A narrower font is used just for the event text, so more of each title fits in the narrow portrait columns.</li>
+    <li>The "Coming up" list is gone, giving the grid the full height.</li>
+  </ul>
+</div>
+</div>

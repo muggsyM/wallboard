@@ -1,0 +1,270 @@
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" rel="stylesheet">
+<style>
+  .wall{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:28px;align-items:start}
+  .wall h3{margin:0 0 4px}.wall p{margin:0 0 10px;opacity:.8;font-size:14px}
+  .scr{position:relative;aspect-ratio:9/16;width:100%;border-radius:12px;overflow:hidden;color:#fff;
+       font-family:'Outfit',system-ui,sans-serif;container-type:inline-size;box-shadow:0 10px 34px rgba(0,0,0,.4);
+       background:linear-gradient(170deg,#1d2433,#11141b)}
+  .bg{position:absolute;inset:0;background-size:cover;background-position:center}
+  .veil{position:absolute;inset:0;background:linear-gradient(170deg,rgba(14,17,24,.86),rgba(14,17,24,.94))}
+  .in{position:absolute;inset:5cqw 5cqw 4cqw;display:flex;flex-direction:column;gap:3.4cqw}
+  .hdr{display:flex;justify-content:space-between;align-items:flex-start}
+  .clock{font-weight:200;font-size:19cqw;line-height:.85;letter-spacing:-.4cqw}
+  .date{font-size:4.4cqw;opacity:.92;margin-top:1.2cqw}
+  .sub{font-size:3cqw;opacity:.7}
+  .title{font-size:6cqw;font-weight:300;line-height:1}.title b{font-weight:500}
+  .wx{display:flex;align-items:center;gap:1.4cqw;justify-content:flex-end}
+  .wx .mdi{font-size:8cqw;color:#ffd36b}.wx .tmp{font-size:8cqw;font-weight:200}
+  .people{display:flex;gap:1.2cqw;justify-content:flex-end;margin-top:1.6cqw}
+  .people span{width:6cqw;height:6cqw;border-radius:50%;display:grid;place-items:center;font-size:2.6cqw;font-weight:600;border:.4cqw solid #7be0a5}
+  .people span.away{border-color:rgba(255,255,255,.3);opacity:.5}
+  .tom{background:#4f8cff}.anna{background:#e0607e}.dad{background:#2bb3a0}.mom{background:#f0a23b}.fam{background:#8c6cf0}
+  .lbl{font-size:2.7cqw;letter-spacing:.5cqw;text-transform:uppercase;opacity:.65;font-weight:500}
+  .ev{display:flex;align-items:center;gap:2.6cqw;padding:1.3cqw 0;font-size:4cqw}
+  .ev .t{width:12cqw;font-weight:500;font-variant-numeric:tabular-nums}
+  .ev .who{width:6cqw;height:6cqw;border-radius:50%;display:grid;place-items:center;font-size:2.7cqw;font-weight:600;flex:none}
+  .ev .ti{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ev .loc{display:block;font-size:2.9cqw;opacity:.6}
+  .ev.past{opacity:.4}
+  .allday{display:inline-flex;align-items:center;gap:1.2cqw;font-size:3.2cqw;padding:.9cqw 2.2cqw;border-radius:5cqw;font-weight:500}
+  .photo{position:relative;border-radius:3cqw;overflow:hidden}
+  .caption{position:absolute;left:2.6cqw;bottom:2.2cqw;font-size:2.8cqw;opacity:.9;display:flex;align-items:center;gap:1cqw;text-shadow:0 .3cqw 1.2cqw rgba(0,0,0,.7)}
+  .cards3{display:grid;grid-template-columns:repeat(3,1fr);gap:2cqw}
+  .card3{background:rgba(255,255,255,.06);border-radius:2.4cqw;padding:2.2cqw;font-size:2.8cqw}
+  .card3 .h{display:flex;justify-content:space-between;align-items:center;font-size:3.3cqw;font-weight:500;margin-bottom:1cqw}
+  .card3 .h .mdi{color:#ffd36b}
+  .card3 div.i{margin-top:.8cqw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dot{display:inline-block;width:2cqw;height:2cqw;border-radius:50%;margin-right:1cqw;vertical-align:-.1cqw}
+  .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:2cqw}
+  .tile{background:rgba(255,255,255,.08);border-radius:2.6cqw;padding:2.2cqw;font-size:3cqw;display:flex;flex-direction:column;gap:.6cqw;position:relative}
+  .tile .mdi{font-size:6cqw;line-height:1}
+  .tile small{font-size:2.4cqw;opacity:.65}
+  .tile.on{background:rgba(255,211,107,.18)}.tile.on .mdi{color:#ffd36b}
+  .tile.run{background:rgba(123,224,165,.16)}.tile.run .mdi{color:#7be0a5}
+  .tile.warn .mdi{color:#ffb35c}
+  .tile .shield{position:absolute;top:1.6cqw;right:1.8cqw;font-size:3cqw!important;opacity:.6}
+  .dots{display:flex;gap:1.4cqw;justify-content:center;margin-top:auto}
+  .dots span{width:1.8cqw;height:1.8cqw;border-radius:50%;background:rgba(255,255,255,.3)}
+  .dots span.on{background:#fff;width:5cqw;border-radius:1cqw}
+
+  /* week rows */
+  .wrow{display:flex;gap:3cqw;padding:2cqw 2.4cqw;border-radius:2.6cqw;background:rgba(255,255,255,.05);align-items:flex-start}
+  .wrow.today{background:rgba(79,140,255,.17);box-shadow:inset 0 0 0 .4cqw rgba(79,140,255,.7)}
+  .wd{width:14cqw;flex:none}
+  .wd .n{font-size:2.6cqw;letter-spacing:.4cqw;text-transform:uppercase;opacity:.7;font-weight:500}
+  .wd .d{font-size:7.5cqw;font-weight:300;line-height:1}
+  .wd .w{font-size:2.6cqw;opacity:.8;margin-top:.6cqw;white-space:nowrap}.wd .w .mdi{color:#ffd36b;font-size:3.4cqw}
+  .wrow.we .wd .n{color:#ffb3c0}
+  .chips{flex:1;display:flex;flex-direction:column;gap:1cqw;min-width:0}
+  .chip{font-size:3.2cqw;padding:.8cqw 1.6cqw;border-left:1cqw solid;border-radius:1.2cqw;background:rgba(255,255,255,.07);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chip b{font-weight:500;margin-right:1.4cqw;opacity:.85}
+  .chip.t{border-color:#4f8cff}.chip.a{border-color:#e0607e}.chip.d{border-color:#2bb3a0}.chip.m{border-color:#f0a23b}.chip.f{border-color:#8c6cf0}
+  .chip.all{border-left:none;font-weight:500}
+  .chip.past{opacity:.4}
+  .empty{font-size:3cqw;opacity:.4;padding-top:1cqw}
+
+  /* month */
+  .mg{display:grid;grid-template-columns:repeat(7,1fr);gap:.9cqw}
+  .mg .h{font-size:2.4cqw;text-transform:uppercase;letter-spacing:.3cqw;opacity:.6;text-align:center;font-weight:500}
+  .c{aspect-ratio:1/1.25;background:rgba(255,255,255,.05);border-radius:1.4cqw;padding:1cqw;display:flex;flex-direction:column;gap:.6cqw;overflow:hidden}
+  .c .n{font-size:3cqw}
+  .c.out{opacity:.25}.c.past{opacity:.5}.c.we{background:rgba(255,255,255,.03)}
+  .c.today{background:rgba(79,140,255,.25);box-shadow:inset 0 0 0 .4cqw #4f8cff}
+  .c.today .n{font-weight:600}
+  .ds{display:flex;flex-wrap:wrap;gap:.7cqw}
+  .ds i{width:1.7cqw;height:1.7cqw;border-radius:50%}
+  .barx{height:1.6cqw;border-radius:.8cqw;margin:0 -1cqw}
+  .hol{font-size:1.9cqw;color:#ffb3c0;line-height:1.1}
+  .up{display:flex;flex-direction:column;gap:.4cqw}
+  .up .ev{font-size:3.5cqw;padding:1cqw 0}
+  .up .ev .t{width:17cqw;font-size:3cqw;opacity:.8}
+
+  /* home */
+  .rooms{display:grid;grid-template-columns:repeat(3,1fr);gap:2cqw}
+  .room{background:rgba(255,255,255,.06);border-radius:2.4cqw;padding:2cqw 2.2cqw}
+  .room .nm{font-size:2.8cqw;opacity:.8}
+  .room .tt{font-size:6.4cqw;font-weight:300;line-height:1.1}
+  .room .meta{font-size:2.4cqw;opacity:.7}
+  .warnc{color:#ffb35c}.okc{color:#7be0a5}
+  .srow{display:flex;align-items:center;gap:2.4cqw;font-size:3.4cqw;padding:1.3cqw 0;border-bottom:1px solid rgba(255,255,255,.07)}
+  .srow .mdi{font-size:5cqw;width:6cqw;text-align:center}
+  .srow .v{margin-left:auto;font-weight:500}
+  .spin{display:inline-block;width:3cqw;height:3cqw;border:.5cqw solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%}
+</style>
+
+<h2>Portrait: the four pages on the rotated monitor</h2>
+<p class="subtitle">Drawn at 9:16, as the screen hangs on the wall. Same header everywhere: big clock, date, weather, who's home. Dots at the bottom = which page. Swipe or tap empty space to change page; tap a tile to control it.</p>
+
+<div class="wall">
+
+<!-- ================= TODAY (C) ================= -->
+<div>
+  <h3>1 · Today (family planner)</h3>
+  <p>Photo on top, today's timeline, the next 3 days, and quick controls at the bottom.</p>
+  <div class="scr">
+    <div class="in">
+      <div class="hdr">
+        <div><div class="clock">7:42</div><div class="date">Saturday, 7 November</div></div>
+        <div><div class="wx"><i class="mdi mdi-weather-partly-cloudy"></i><span class="tmp">8°</span></div><div class="sub" style="text-align:right">H 12° · L 3° · rain 16:00</div>
+          <div class="people"><span class="dad">D</span><span class="mom">M</span><span class="tom away">T</span><span class="anna">A</span></div></div>
+      </div>
+
+      <div class="photo" style="height:36cqw;flex:none"><div class="bg" style="background-image:url('https://picsum.photos/id/1036/900/600')"></div>
+        <div class="caption"><i class="mdi mdi-image-outline"></i>Christmas 2025 · Šumava</div></div>
+
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.4cqw"><span class="lbl">Today</span><span class="allday fam"><i class="mdi mdi-cake-variant"></i>Grandpa's birthday</span></div>
+        <div style="border-left:.5cqw solid rgba(255,255,255,.15);padding-left:3.4cqw;margin-left:1cqw">
+          <div class="ev past"><span class="t">07:00</span><span class="who dad">D</span><span class="ti">Morning run</span></div>
+          <div style="position:relative;height:0"><div style="position:absolute;left:-4.2cqw;right:0;border-top:.5cqw solid #ff6b6b"></div><div style="position:absolute;left:-5.3cqw;top:-1.3cqw;width:2.6cqw;height:2.6cqw;border-radius:50%;background:#ff6b6b"></div></div>
+          <div class="ev"><span class="t">09:00</span><span class="who tom">T</span><span class="ti">Football match<span class="loc">Sports hall Letňany · leave 8:30</span></span></div>
+          <div class="ev"><span class="t">14:30</span><span class="who anna">A</span><span class="ti">Dentist<span class="loc">Dr. Novák, Vinohradská 12</span></span></div>
+          <div class="ev"><span class="t">18:00</span><span class="who fam">★</span><span class="ti">Dinner at Grandma's</span></div>
+        </div>
+      </div>
+
+      <div class="cards3">
+        <div class="card3"><div class="h">Sun<span><i class="mdi mdi-weather-cloudy"></i> 10°</span></div><div class="i"><span class="dot tom"></span>Swimming</div><div class="i"><span class="dot fam"></span>Zoo</div></div>
+        <div class="card3"><div class="h">Mon<span><i class="mdi mdi-weather-rainy"></i> 7°</span></div><div class="i"><span class="dot anna"></span>Piano</div><div class="i"><span class="dot mom"></span>Yoga</div></div>
+        <div class="card3"><div class="h">Tue<span><i class="mdi mdi-weather-sunny"></i> 11°</span></div><div class="i"><span class="dot dad"></span>Brno trip</div></div>
+      </div>
+
+      <div class="tiles">
+        <div class="tile on"><i class="mdi mdi-lightbulb-on"></i>Kitchen<small>On</small></div>
+        <div class="tile"><i class="mdi mdi-lightbulb-outline"></i>Hallway<small>Off</small></div>
+        <div class="tile"><i class="mdi mdi-robot-vacuum"></i>Vacuum<small>Docked</small></div>
+        <div class="tile run"><i class="mdi mdi-shield-lock-outline shield"></i><i class="mdi mdi-fire"></i>Boiler<small>Heating</small></div>
+      </div>
+      <div class="dots"><span class="on"></span><span></span><span></span><span></span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= WEEK ================= -->
+<div>
+  <h3>2 · Next 7 days</h3>
+  <p>One row per day, today first, each with its weather. Colour = person; all-day events are solid.</p>
+  <div class="scr">
+    <div class="bg" style="background-image:url('https://picsum.photos/id/1015/900/1600')"></div><div class="veil"></div>
+    <div class="in" style="gap:2cqw">
+      <div class="hdr" style="margin-bottom:1cqw">
+        <div><div class="clock" style="font-size:15cqw">7:42</div><div class="title" style="margin-top:1.4cqw"><b>This week</b> <span class="sub">7–13 Nov</span></div></div>
+        <div><div class="wx"><i class="mdi mdi-weather-partly-cloudy"></i><span class="tmp">8°</span></div><div class="people"><span class="dad">D</span><span class="mom">M</span><span class="tom away">T</span><span class="anna">A</span></div></div>
+      </div>
+      <div class="wrow today we"><div class="wd"><div class="n">Today</div><div class="d">7</div><div class="w"><i class="mdi mdi-weather-partly-cloudy"></i> 12°/3°</div></div>
+        <div class="chips"><div class="chip all fam">Grandpa's birthday</div><div class="chip d past"><b>07:00</b>Morning run</div><div class="chip t"><b>09:00</b>Football match</div><div class="chip a"><b>14:30</b>Dentist</div><div class="chip f"><b>18:00</b>Dinner at Grandma's</div></div></div>
+      <div class="wrow we"><div class="wd"><div class="n">Sun</div><div class="d">8</div><div class="w"><i class="mdi mdi-weather-cloudy"></i> 10°/4°</div></div>
+        <div class="chips"><div class="chip t"><b>10:00</b>Swimming</div><div class="chip f"><b>15:00</b>Zoo</div></div></div>
+      <div class="wrow"><div class="wd"><div class="n">Mon</div><div class="d">9</div><div class="w"><i class="mdi mdi-weather-rainy"></i> 7°/2°</div></div>
+        <div class="chips"><div class="chip a"><b>16:00</b>Piano lesson</div><div class="chip m"><b>19:00</b>Yoga</div></div></div>
+      <div class="wrow"><div class="wd"><div class="n">Tue</div><div class="d">10</div><div class="w"><i class="mdi mdi-weather-sunny"></i> 11°/1°</div></div>
+        <div class="chips"><div class="chip all dad">Brno trip</div><div class="chip t"><b>15:30</b>Football training</div></div></div>
+      <div class="wrow"><div class="wd"><div class="n">Wed</div><div class="d">11</div><div class="w"><i class="mdi mdi-weather-partly-cloudy"></i> 9°/3°</div></div>
+        <div class="chips"><div class="chip a"><b>13:00</b>School trip</div><div class="chip f"><b>17:00</b>Parents' evening</div><div class="chip m"><b>19:00</b>Book club <span style="opacity:.6">· +2 more</span></div></div></div>
+      <div class="wrow"><div class="wd"><div class="n">Thu</div><div class="d">12</div><div class="w"><i class="mdi mdi-weather-cloudy"></i> 8°/4°</div></div>
+        <div class="chips"><div class="chip t"><b>15:30</b>Football training</div></div></div>
+      <div class="wrow"><div class="wd"><div class="n">Fri</div><div class="d">13</div><div class="w"><i class="mdi mdi-weather-snowy-rainy"></i> 4°/0°</div></div>
+        <div class="chips"><div class="chip all mom">Mom off work</div><div class="chip f"><b>19:00</b>Movie night</div></div></div>
+      <div class="dots"><span></span><span class="on"></span><span></span><span></span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MONTH ================= -->
+<div>
+  <h3>3 · Whole month</h3>
+  <p>The grid on top shows how busy each day is (a dot per event, bars for trips). The space under it lists what's coming up.</p>
+  <div class="scr">
+    <div class="bg" style="background-image:url('https://picsum.photos/id/1018/900/1600')"></div><div class="veil"></div>
+    <div class="in" style="gap:2.6cqw">
+      <div class="hdr">
+        <div><div class="clock" style="font-size:15cqw">7:42</div><div class="title" style="margin-top:1.4cqw"><b>November</b> 2026</div></div>
+        <div><div class="wx"><i class="mdi mdi-weather-partly-cloudy"></i><span class="tmp">8°</span></div><div class="people"><span class="dad">D</span><span class="mom">M</span><span class="tom away">T</span><span class="anna">A</span></div></div>
+      </div>
+      <div class="mg">
+        <div class="h">Mo</div><div class="h">Tu</div><div class="h">We</div><div class="h">Th</div><div class="h">Fr</div><div class="h">Sa</div><div class="h">Su</div>
+        <div class="c out"><span class="n">26</span></div><div class="c out"><span class="n">27</span></div><div class="c out"><span class="n">28</span></div><div class="c out"><span class="n">29</span></div><div class="c out"><span class="n">30</span></div><div class="c out"><span class="n">31</span></div>
+        <div class="c past we"><span class="n">1</span><div class="ds"><i class="fam"></i></div></div>
+        <div class="c past"><span class="n">2</span><div class="ds"><i class="anna"></i></div></div><div class="c past"><span class="n">3</span><div class="ds"><i class="tom"></i></div></div><div class="c past"><span class="n">4</span><div class="ds"><i class="mom"></i></div></div><div class="c past"><span class="n">5</span><div class="ds"><i class="tom"></i></div></div><div class="c past"><span class="n">6</span><div class="ds"><i class="dad"></i></div></div>
+        <div class="c today"><span class="n">7</span><div class="barx fam"></div><div class="ds"><i class="dad"></i><i class="tom"></i><i class="anna"></i><i class="fam"></i></div></div>
+        <div class="c we"><span class="n">8</span><div class="ds"><i class="tom"></i><i class="fam"></i></div></div>
+        <div class="c"><span class="n">9</span><div class="ds"><i class="anna"></i><i class="mom"></i></div></div>
+        <div class="c"><span class="n">10</span><div class="barx dad"></div><div class="ds"><i class="tom"></i></div></div>
+        <div class="c"><span class="n">11</span><div class="ds"><i class="anna"></i><i class="fam"></i><i class="mom"></i><i class="dad"></i><i class="tom"></i></div></div>
+        <div class="c"><span class="n">12</span><div class="ds"><i class="tom"></i></div></div>
+        <div class="c"><span class="n">13</span><div class="barx mom"></div><div class="ds"><i class="fam"></i></div></div>
+        <div class="c we"><span class="n">14</span></div><div class="c we"><span class="n">15</span><div class="ds"><i class="tom"></i></div></div>
+        <div class="c"><span class="n">16</span><div class="ds"><i class="anna"></i></div></div>
+        <div class="c"><span class="n">17</span><span class="hol">Holiday</span></div>
+        <div class="c"><span class="n">18</span><div class="ds"><i class="mom"></i></div></div><div class="c"><span class="n">19</span><div class="ds"><i class="tom"></i></div></div>
+        <div class="c"><span class="n">20</span><div class="barx fam" style="margin-right:-2cqw"></div></div><div class="c we"><span class="n">21</span><div class="barx fam" style="margin:0 -2cqw"></div></div><div class="c we"><span class="n">22</span><div class="barx fam" style="margin-left:-2cqw"></div></div>
+        <div class="c"><span class="n">23</span><div class="ds"><i class="anna"></i></div></div><div class="c"><span class="n">24</span><div class="ds"><i class="dad"></i></div></div><div class="c"><span class="n">25</span><div class="ds"><i class="mom"></i></div></div><div class="c"><span class="n">26</span><div class="ds"><i class="tom"></i></div></div><div class="c"><span class="n">27</span><div class="ds"><i class="anna"></i></div></div><div class="c we"><span class="n">28</span><div class="ds"><i class="fam"></i></div></div><div class="c we"><span class="n">29</span><div class="ds"><i class="fam"></i></div></div>
+        <div class="c"><span class="n">30</span><div class="ds"><i class="anna"></i></div></div><div class="c out"><span class="n">1</span></div><div class="c out"><span class="n">2</span></div><div class="c out"><span class="n">3</span></div><div class="c out"><span class="n">4</span></div><div class="c out"><span class="n">5</span></div><div class="c out"><span class="n">6</span></div>
+      </div>
+      <div class="up">
+        <span class="lbl">Coming up</span>
+        <div class="ev"><span class="t">Tue 10</span><span class="who dad">D</span><span class="ti">Brno trip · all day</span></div>
+        <div class="ev"><span class="t">Wed 11</span><span class="who fam">★</span><span class="ti">Parents' evening · 17:00</span></div>
+        <div class="ev"><span class="t">Tue 17</span><span class="who" style="background:#ffb3c0;color:#222">H</span><span class="ti">Public holiday – Freedom Day</span></div>
+        <div class="ev"><span class="t">Fri 20–22</span><span class="who fam">★</span><span class="ti">Ski weekend · Špindlerův Mlýn</span></div>
+        <div class="ev"><span class="t">Fri 27</span><span class="who anna">A</span><span class="ti">Anna's piano recital · 18:00</span></div>
+      </div>
+      <div class="dots"><span></span><span></span><span class="on"></span><span></span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= HOME ================= -->
+<div>
+  <h3>4 · Home (tap to control)</h3>
+  <p>Room temperatures, big controls (lights, vacuum, boiler, scenes), then status. A tile shows a spinner until HA confirms. 🛡 = asks "Are you sure?" first.</p>
+  <div class="scr">
+    <div class="bg" style="background-image:url('https://picsum.photos/id/1043/900/1600')"></div><div class="veil"></div>
+    <div class="in" style="gap:2.8cqw">
+      <div class="hdr">
+        <div><div class="clock" style="font-size:15cqw">7:42</div><div class="title" style="margin-top:1.4cqw"><b>Home</b></div><div class="sub" style="margin-top:.8cqw">1 window open · washer 12 min</div></div>
+        <div><div class="wx"><i class="mdi mdi-weather-partly-cloudy"></i><span class="tmp">8°</span></div><div class="people"><span class="dad">D</span><span class="mom">M</span><span class="tom away">T</span><span class="anna">A</span></div></div>
+      </div>
+
+      <div class="rooms">
+        <div class="room"><div class="nm">Living</div><div class="tt">21.5°</div><div class="meta">45% · 2 lights</div></div>
+        <div class="room"><div class="nm">Kitchen</div><div class="tt">22.1°</div><div class="meta">51% · 1 light</div></div>
+        <div class="room"><div class="nm">Bedroom</div><div class="tt">19.0°</div><div class="meta">48%</div></div>
+        <div class="room"><div class="nm">Kids</div><div class="tt">20.4°</div><div class="meta warnc">window open</div></div>
+        <div class="room"><div class="nm">Bathroom</div><div class="tt">23.2°</div><div class="meta warnc">68% · fan on</div></div>
+        <div class="room"><div class="nm">Outside</div><div class="tt">8.0°</div><div class="meta">82% · 12 km/h</div></div>
+      </div>
+
+      <div>
+        <div class="lbl" style="margin-bottom:1.6cqw">Lights</div>
+        <div class="tiles">
+          <div class="tile on"><i class="mdi mdi-sofa"></i>Living<small>On · 70%</small></div>
+          <div class="tile on"><i class="mdi mdi-countertop"></i>Kitchen<small>On</small></div>
+          <div class="tile"><i class="mdi mdi-bed"></i>Bedroom<small>Off</small></div>
+          <div class="tile"><i class="mdi mdi-lightbulb-outline"></i>Hallway<small>Off</small></div>
+        </div>
+      </div>
+      <div>
+        <div class="lbl" style="margin-bottom:1.6cqw">Devices &amp; scenes</div>
+        <div class="tiles">
+          <div class="tile" style="background:rgba(255,255,255,.14)"><i class="mdi mdi-robot-vacuum"></i>Vacuum<small style="display:flex;align-items:center;gap:1cqw"><span class="spin"></span>Starting…</small></div>
+          <div class="tile run"><i class="mdi mdi-shield-lock-outline shield"></i><i class="mdi mdi-fire"></i>Boiler<small>Heating · 58°</small></div>
+          <div class="tile"><i class="mdi mdi-weather-night"></i>Good night<small>Scene</small></div>
+          <div class="tile"><i class="mdi mdi-home-export-outline"></i>Leaving<small>Scene</small></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="srow"><i class="mdi mdi-door-closed-lock okc"></i>Front door<span class="v okc">Locked</span></div>
+        <div class="srow"><i class="mdi mdi-window-open-variant warnc"></i>Kids' window · 25 min<span class="v warnc">Open</span></div>
+        <div class="srow"><i class="mdi mdi-washing-machine warnc"></i>Washing machine<span class="v">12 min</span></div>
+        <div class="srow" style="border:none"><i class="mdi mdi-flash"></i>Power now · solar 2.1 kWh today<span class="v">640 W</span></div>
+      </div>
+      <div class="dots"><span></span><span></span><span></span><span class="on"></span></div>
+    </div>
+  </div>
+</div>
+
+</div>

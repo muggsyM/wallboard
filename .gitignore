@@ -4,3 +4,6 @@
 www/dakboard/config.js
 
 __pycache__/
+
+# Brainstorm mockups
+.superpowers/
