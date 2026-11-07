@@ -22,7 +22,7 @@ import httpx
 from . import google_oauth
 from .config import ConfigStore, Member, Secrets
 from .events import display_range, normalize_google_event, to_json
-from .google_oauth import GoogleError, TokenCache
+from .google_oauth import GoogleAuthExpired, GoogleError, TokenCache
 from .holidays_cz import czech_holidays
 from .hub import Hub
 
@@ -127,7 +127,7 @@ class GoogleCalendarService:
         # Dev only: publish this sample file (see expand_dev_calendar) instead of polling Google.
         self.dev_calendar = dev_calendar
         self.hub = hub
-        self.status: dict[str, bool] = {}
+        self.status: dict[str, str] = {}  # account_id -> "ok" | "expired" | "error"
         self._token_cache = token_cache or google_oauth.token_cache
         self._token_fn = token_fn or (lambda s, a: google_oauth.access_token(s, a, self._token_cache))
         self._now = now or (lambda: datetime.now(timezone.utc))
@@ -149,7 +149,7 @@ class GoogleCalendarService:
             return
         try:
             self._load_cache()
-            self.status = {a.id: False for a in self.store.config.google_accounts}
+            self.status = {a.id: "error" for a in self.store.config.google_accounts}  # until the first fetch
             await self._publish()
         except Exception as e:  # a disk or data fault must not fail the app lifespan
             log.error("initial calendar publish failed (%s); polling anyway", type(e).__name__)
@@ -249,7 +249,7 @@ class GoogleCalendarService:
         ids = [a.id for a in cfg.google_accounts]
         for gone in set(self._accounts) - set(ids):
             del self._accounts[gone]
-        self.status = {i: self.status.get(i, False) for i in ids}
+        self.status = {i: self.status.get(i, "error") for i in ids}
         for account_id in ids:
             try:
                 calendars = await self._fetch_account(account_id, first, last, tz)
@@ -258,7 +258,7 @@ class GoogleCalendarService:
             else:
                 if account_id not in {a.id for a in self.store.config.google_accounts}:
                     continue  # deleted while fetching
-                self.status[account_id] = True
+                self.status[account_id] = "ok"
                 self._accounts[account_id] = {"fetched_at": self._now().isoformat(), "calendars": calendars}
         current = {a.id for a in self.store.config.google_accounts}
         self.status = {k: v for k, v in self.status.items() if k in current}
@@ -267,7 +267,8 @@ class GoogleCalendarService:
         await self._publish()
 
     def _record_failure(self, account_id: str, exc: Exception) -> None:
-        self.status[account_id] = False
+        # "expired" needs the owner to sign in again; "error" (network, Google down) retries by itself.
+        self.status[account_id] = "expired" if isinstance(exc, GoogleAuthExpired) else "error"
         log.warning("google calendar fetch failed for account %s (%s)", account_id, type(exc).__name__)
 
     async def _fetch_account(self, account_id: str, first: date, last: date, tz: ZoneInfo) -> dict[str, list[dict]]:

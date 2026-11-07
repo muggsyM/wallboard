@@ -114,8 +114,8 @@ async def test_merges_accounts_and_colors(env):
         ("Anglictina", "bob", "#222222"),
         ("Zubar", "anna", "#111111"),
     ]
-    assert env.status() == {"A": True, "B": True}
-    assert svc.status == {"A": True, "B": True}
+    assert env.status() == {"A": "ok", "B": "ok"}
+    assert svc.status == {"A": "ok", "B": "ok"}
     await svc.stop()
 
 
@@ -168,40 +168,40 @@ async def test_one_account_expired_keeps_others(env):
     env.fail["A"] = GoogleAuthExpired("A")
     env.clock.t = NOW + timedelta(hours=23, minutes=59)
     await svc.poll_once()
-    assert env.status() == {"A": False, "B": True}
+    assert env.status() == {"A": "expired", "B": "ok"}
     assert env.titles() == ["A-event", "B-event"]  # kept from cache, under 24h
 
     env.clock.t = NOW + timedelta(hours=24, minutes=1)
     await svc.poll_once()
-    assert env.status() == {"A": False, "B": True}
+    assert env.status() == {"A": "expired", "B": "ok"}
     assert env.titles() == ["B-event"]  # older than 24h: dropped
     cached = json.loads((env.store.data_dir / CACHE_NAME).read_text())
     assert set(cached["accounts"]) == {"B"}
 
     # stays False until a fetch succeeds, then recovers
     await svc.poll_once()
-    assert env.status()["A"] is False
+    assert env.status()["A"] == "expired"
     del env.fail["A"]
     await svc.poll_once()
-    assert env.status() == {"A": True, "B": True}
+    assert env.status() == {"A": "ok", "B": "ok"}
     assert env.titles() == ["A-event", "B-event"]
     await svc.stop()
 
 
 @respx.mock
-async def test_plain_google_error_and_network_error_set_status_false(env, caplog):
+async def test_plain_google_error_and_network_error_set_status_error(env, caplog):
     mock_events("a@x.cz", [ev("1", "A-event")])
     respx.get(f"{API}/calendars/b%40x.cz/events").mock(side_effect=httpx.ConnectTimeout("boom"))
     svc = env.service()
     with caplog.at_level("WARNING"):
         await svc.poll_once()
-    assert env.status() == {"A": True, "B": False}
+    assert env.status() == {"A": "ok", "B": "error"}
     assert env.titles() == ["A-event"]
     assert any("B" in r.getMessage() and "GoogleError" in r.getMessage() for r in caplog.records)
     assert not any("tok-" in r.getMessage() for r in caplog.records)
     env.fail["A"] = GoogleError("Google client not configured")
     await svc.poll_once()
-    assert env.status() == {"A": False, "B": False}
+    assert env.status() == {"A": "error", "B": "error"}
     await svc.stop()
 
 
@@ -214,13 +214,13 @@ async def test_401_invalidates_token_and_retries_once(env):
     svc = env.service()
     await svc.poll_once()
     assert env.titles() == ["Retried"]
-    assert env.status()["A"] is True
+    assert env.status()["A"] == "ok"
     assert route.calls[0].request.headers["authorization"] != route.calls[1].request.headers["authorization"]
 
     route.mock(side_effect=[httpx.Response(401), httpx.Response(401)])
     await svc.poll_once()
     assert len(route.calls) == 4
-    assert env.status()["A"] is False
+    assert env.status()["A"] == "error"
     await svc.stop()
 
 
@@ -240,7 +240,7 @@ async def test_deleted_account_removed_from_status_and_cache(env):
         )
     )
     await svc.poll_once()
-    assert env.status() == {"B": True}
+    assert env.status() == {"B": "ok"}
     assert env.titles() == ["B-event"]
     assert set(json.loads((env.store.data_dir / CACHE_NAME).read_text())["accounts"]) == {"B"}
     await svc.stop()
@@ -259,7 +259,7 @@ async def test_cache_written_and_loaded_on_start(env):
     await svc.start()
     try:
         assert env.titles(hub2) == ["A-event", "B-event"]
-        assert env.status(hub2) == {"A": False, "B": False}
+        assert env.status(hub2) == {"A": "error", "B": "error"}
     finally:
         await svc.stop()
 
@@ -396,7 +396,7 @@ async def test_disabled_calendar_dropped_from_kept_cache(env):
     )
     env.fail["A"] = GoogleAuthExpired("A")
     await svc.poll_once()
-    assert env.status()["A"] is False
+    assert env.status()["A"] == "expired"
     assert env.titles() == ["B-event"]
     await svc.stop()
 
@@ -437,7 +437,7 @@ async def test_cached_account_not_in_config_not_published_on_start(env):
     await svc.start()
     try:
         assert env.titles(hub2) == ["B-event"]
-        assert env.status(hub2) == {"B": False}
+        assert env.status(hub2) == {"B": "error"}
     finally:
         await svc.stop()
 
@@ -450,13 +450,13 @@ async def test_repeated_page_token_and_page_cap(env):
     )
     svc = env.service()
     await svc.poll_once()
-    assert env.status()["A"] is False
+    assert env.status()["A"] == "error"
     counter = iter(range(1000))
     respx.get(f"{API}/calendars/a%40x.cz/events").mock(
         side_effect=lambda req: httpx.Response(200, json={"items": [], "nextPageToken": f"t{next(counter)}"})
     )
     await svc.poll_once()
-    assert env.status()["A"] is False
+    assert env.status()["A"] == "error"
     assert next(counter) <= 51
     await svc.stop()
 

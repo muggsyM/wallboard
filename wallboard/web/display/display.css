@@ -123,6 +123,12 @@ html, body {
 }
 .wb-wx .mdi { font-size: 8cqw; line-height: 1; color: var(--wb-accent-sun); }
 .wb-tmp { font-size: 8cqw; font-weight: 200; line-height: 1; }
+.wb-wx .mdi.wb-cal-stale {
+  font-size: 3.6cqw;
+  margin-right: .6cqw;
+  color: var(--wb-text);
+  opacity: .4;
+}
 .wb-offline {
   width: 2.4cqw;
   height: 2.4cqw;

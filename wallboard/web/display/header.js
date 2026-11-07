@@ -31,6 +31,13 @@ export function isOffline(state) {
   return !state.connected || state.status?.ha === false;
 }
 
+// Spec §7: calendar data may be old when Google accounts exist but none fetched ("ok")
+// recently. Shown as a small dimmed sync icon; the page itself is not dimmed for Google.
+export function calendarStale(status) {
+  const accounts = Object.values(status?.google || {});
+  return accounts.length > 0 && !accounts.includes("ok");
+}
+
 function weatherHtml(weather) {
   const cur = weather?.current;
   if (!cur || !cur.condition) return "";
@@ -59,7 +66,10 @@ export function renderHeader(el, state, { titleKey, subtitle } = {}) {
     : `<div class="wb-clock" data-clock="time">${clockText("time", now)}</div>
        <div class="wb-date" data-clock="date">${clockText("date", now)}</div>`;
   const offline = isOffline(state) ? `<span class="wb-offline" title="${esc(t("offline"))}"></span>` : "";
-  const right = `<div class="wb-wx">${offline}${weatherHtml(state.weather)}</div>
+  const stale = calendarStale(state.status)
+    ? `<i class="mdi mdi-sync-off wb-cal-stale" title="${esc(t("calendar_stale"))}"></i>`
+    : "";
+  const right = `<div class="wb-wx">${stale}${offline}${weatherHtml(state.weather)}</div>
     ${titleKey || !subtitle ? "" : `<div class="wb-sub wb-sub-right">${esc(subtitle)}</div>`}
     ${peopleHtml(state.config, state.ha)}`;
   const html = `<div class="wb-h-left">${left}</div><div class="wb-h-right">${right}</div>`;

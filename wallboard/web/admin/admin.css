@@ -150,6 +150,7 @@ p.hint { margin: 0 0 12px; }
 }
 .badge.ok { background: rgba(76, 212, 160, .15); color: var(--ok); }
 .badge.error { background: rgba(255, 107, 107, .15); color: var(--danger); white-space: normal; }
+.badge.muted { background: rgba(139, 147, 163, .15); color: var(--muted); white-space: normal; }
 .note { margin: 8px 0 12px; padding: 8px 12px; border-radius: 8px; font-size: .95rem; }
 .note.ok { background: rgba(76, 212, 160, .12); color: var(--ok); }
 .note.error { background: rgba(255, 107, 107, .12); color: var(--danger); }

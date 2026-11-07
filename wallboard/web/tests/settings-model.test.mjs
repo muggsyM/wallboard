@@ -114,3 +114,13 @@ test("errorText maps stable types to translations and falls back to msg", () => 
   assert.equal(M.errorText({ type: "some_new_type", msg: "server text" }, t), "server text");
   assert.equal(M.errorText({ msg: "no type" }, t), "no type");
 });
+
+test("googleBadge: expired only for expired, calm note for error", () => {
+  assert.equal(M.googleBadge("ok", undefined), "ok");
+  assert.equal(M.googleBadge("expired", undefined), "expired");
+  assert.equal(M.googleBadge("error", undefined), "unreachable");
+  assert.equal(M.googleBadge(undefined, undefined), null);
+  assert.equal(M.googleBadge("error", { expired: true }), "expired"); // calendar list said 409
+  assert.equal(M.googleBadge("ok", { expired: true }), "expired");
+  assert.equal(M.googleBadge(false, undefined), null); // old boolean status is not trusted
+});

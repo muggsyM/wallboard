@@ -79,6 +79,16 @@ export function renameTile(config, index, entityId, domains) {
 
 export const memberAccounts = (config, memberId) => config.google_accounts.filter((a) => a.member_id === memberId);
 
+// Badge for a Google account: "expired" (sign in again) only when the server says so (status
+// "expired", or the calendar list returned 409); "unreachable" for a network/Google fault
+// that retries by itself; "ok"; or null (not polled yet).
+export function googleBadge(status, calendars) {
+  if (status === "expired" || calendars?.expired) return "expired";
+  if (status === "error") return "unreachable";
+  if (status === "ok") return "ok";
+  return null;
+}
+
 // Show a calendar for memberId, or hide it (memberId null). One CalendarRef per account+calendar.
 export function setCalendar(config, account, calendar, memberId) {
   const same = (c) => c.account_id === account.id && c.calendar_id === calendar.id;

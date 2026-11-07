@@ -231,9 +231,8 @@ function safeColor(c) {
 
 function renderAccount(acct) {
   const c = S.config;
-  const ok = S.view.status?.google?.[acct.id];
   const cal = S.calendars[acct.id];
-  const expired = ok === false || cal?.expired;
+  const state = M.googleBadge(S.view.status?.google?.[acct.id], cal);
   if (!cal) loadCalendars(acct.id);
 
   // Calendars from Google, plus any configured ones Google did not return (e.g. sign-in expired).
@@ -278,7 +277,13 @@ function renderAccount(acct) {
       "div",
       { class: "row" },
       h("strong", { class: "email", text: acct.email }),
-      expired ? badge(t("admin_google_expired"), "error") : ok === true ? badge(t("admin_google_ok"), "ok") : null,
+      state === "expired"
+        ? badge(t("admin_google_expired"), "error")
+        : state === "unreachable"
+          ? badge(t("admin_google_unreachable"), "muted")
+          : state === "ok"
+            ? badge(t("admin_google_ok"), "ok")
+            : null,
       button(t("admin_google_disconnect"), () => disconnectGoogle(acct), "danger small"),
     ),
     cal?.state === "loading" ? h("p", { class: "muted", text: t("admin_calendars_loading") }) : null,
