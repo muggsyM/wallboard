@@ -1,0 +1,27 @@
+# Template: install.sh replaces the @...@ placeholders and installs the result
+# as /etc/systemd/system/wallboard.service.
+[Unit]
+Description=Family wallboard server
+After=network-online.target
+Wants=network-online.target
+# Never give up restarting (Restart=always below).
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@REPO_DIR@
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@VENV@/bin/python -m wallboard serve --data @DATA_DIR@ --port 8080
+Restart=always
+RestartSec=3
+
+# Hardening. The code and the venv under home stay readable; only the data dir is writable.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=@DATA_DIR@
+
+[Install]
+WantedBy=multi-user.target

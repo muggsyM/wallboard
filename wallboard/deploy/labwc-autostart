@@ -1,0 +1,18 @@
+# >>> wallboard >>>
+# Added by wallboard/deploy/install.sh. Rerunning the script replaces this block;
+# anything outside the two marker lines is left alone.
+# Portrait: rotate the screen (try 270 if the picture is upside down).
+wlr-randr --output @OUTPUT@ --transform @ROTATION@ || true
+# Wait for the wallboard server, show it full screen, restart the browser if it exits.
+(
+  while :; do
+    until curl -fs http://localhost:8080/healthz >/dev/null 2>&1; do sleep 2; done
+    if command -v chromium >/dev/null 2>&1; then browser=chromium; else browser=chromium-browser; fi
+    "$browser" --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble \
+      --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch \
+      --ozone-platform=wayland --password-store=basic \
+      http://localhost:8080/
+    sleep 3
+  done
+) >/dev/null 2>&1 &
+# <<< wallboard <<<
