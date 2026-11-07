@@ -19,6 +19,7 @@ BLUR_RADIUS = 40
 BLUR_DOWNSCALE = 4  # blur at 1/4 size (radius scaled to match): much faster on a Pi 4
 BACKGROUND_BRIGHTNESS = 0.55
 MATTE = (0x11, 0x11, 0x11)
+_SRGB = ImageCms.createProfile("sRGB")
 
 
 class UnsupportedImage(Exception):
@@ -34,6 +35,7 @@ class ProcessedImage:
 
 
 def _to_rgb(img: Image.Image) -> Image.Image:
+    """Convert to RGB, compositing transparency on the matte. CMYK uses its ICC profile if present."""
     if img.mode in ("I;16", "I;16L", "I;16B", "I"):
         img = img.point(lambda v: v / 256, "L")  # 16-bit to 8-bit
     has_alpha = img.mode in ("RGBA", "LA", "PA") or "transparency" in img.info
@@ -42,23 +44,23 @@ def _to_rgb(img: Image.Image) -> Image.Image:
         base = Image.new("RGBA", rgba.size, MATTE + (255,))
         return Image.alpha_composite(base, rgba).convert("RGB")
     if img.mode == "CMYK" and "icc_profile" in img.info:
-        return _icc_to_srgb(img)
+        return _icc_to_srgb(img, img.info["icc_profile"])
     return img.convert("RGB")
 
 
-def _icc_to_srgb(img: Image.Image) -> Image.Image:
+def _icc_to_srgb(img: Image.Image, profile: bytes) -> Image.Image:
+    """Convert img from its embedded profile to sRGB; on any profile problem fall back to plain RGB."""
     try:
-        src = ImageCms.ImageCmsProfile(io.BytesIO(img.info["icc_profile"]))
-        return ImageCms.profileToProfile(img, src, ImageCms.createProfile("sRGB"), outputMode="RGB")
-    except (ImageCms.PyCMSError, OSError):
+        src = ImageCms.ImageCmsProfile(io.BytesIO(profile))
+        return ImageCms.profileToProfile(img, src, _SRGB, outputMode="RGB")
+    except (ImageCms.PyCMSError, OSError, ValueError):
         return img.convert("RGB")
 
 
 def _fit(img: Image.Image, box: tuple[int, int]) -> Image.Image:
-    """Shrink to fit inside box, keeping aspect ratio; never upscale."""
-    out = img.copy()
-    out.thumbnail(box, Image.Resampling.LANCZOS)
-    return out
+    """Shrink img in place to fit inside box, keeping aspect ratio; never upscale."""
+    img.thumbnail(box, Image.Resampling.LANCZOS)
+    return img
 
 
 def _background(img: Image.Image) -> Image.Image:
@@ -78,13 +80,17 @@ def _jpeg(img: Image.Image, quality: int) -> bytes:
 
 def process_image(data: bytes) -> ProcessedImage:
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", Image.DecompressionBombWarning)
-            with Image.open(io.BytesIO(data)) as img:
-                img.seek(0)  # animated/multi-frame: first frame only
-                img.load()  # truncated files fail here
-                img = ImageOps.exif_transpose(img)
-                rgb = _to_rgb(img)
+        with Image.open(io.BytesIO(data)) as img:
+            # Pillow only warns between 1x and 2x MAX_IMAGE_PIXELS; reject all of it, thread-safely.
+            if img.width * img.height > Image.MAX_IMAGE_PIXELS:
+                raise UnsupportedImage("Image is too large")
+            profile = img.info.get("icc_profile")
+            img.seek(0)  # animated/multi-frame: first frame only
+            img.draft("RGB", (2160, 3840))  # JPEG: decode at reduced scale (no-op otherwise)
+            img.load()  # truncated files fail here
+            cmyk = img.mode == "CMYK"
+            img = ImageOps.exif_transpose(img)  # orientation is read from the original EXIF
+            rgb = _to_rgb(img)
     except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
         raise UnsupportedImage("Image is too large") from exc
     except UnidentifiedImageError as exc:
@@ -92,11 +98,14 @@ def process_image(data: bytes) -> ProcessedImage:
     except (OSError, SyntaxError, ValueError, EOFError) as exc:
         raise UnsupportedImage("Image could not be read") from exc
 
+    landscape = rgb.width > rgb.height
     display = _fit(rgb, DISPLAY_BOX)
-    thumb = _fit(rgb, THUMB_BOX)
+    if profile and not cmyk:
+        display = _icc_to_srgb(display, profile)  # once, on the reduced copy
+    thumb = _fit(display.copy(), THUMB_BOX)
     return ProcessedImage(
         display=_jpeg(display, 85),
-        background=_jpeg(_background(rgb), 80),
+        background=_jpeg(_background(display), 80),
         thumb=_jpeg(thumb, 80),
-        landscape=rgb.width > rgb.height,
+        landscape=landscape,
     )
