@@ -16,7 +16,8 @@ from .gcal import GoogleCalendarService
 from .google_oauth import OAuthStates, RedactCallbackParams
 from .ha_client import HAClient
 from .hub import Hub
-from .routes import admin, display
+from .photos import PhotoStore
+from .routes import admin, display, photos_api
 
 
 @asynccontextmanager
@@ -40,10 +41,13 @@ def create_app(data_dir: Path) -> FastAPI:
     app.state.oauth_states = OAuthStates(lambda: app.state.store.secrets.session_secret)
     app.state.hub = Hub()
     app.state.hub.set_topic("config", app.state.store.public_config())
+    app.state.photos = PhotoStore(Path(data_dir), app.state.hub)
+    app.state.photos.start()
     app.state.ha = HAClient(app.state.store, app.state.hub)
     app.state.gcal = GoogleCalendarService(app.state.store, app.state.hub)
     app.state.hub.on_action = ActionHandler(app.state.store, app.state.hub, app.state.ha).handle
     app.include_router(admin.router)
+    app.include_router(photos_api.router)
     app.include_router(display.router)
     display.mount_static(app)
 

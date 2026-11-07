@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Request, WebSocket
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket
 from fastapi.responses import FileResponse, PlainTextResponse
 from starlette.datastructures import Headers
 from starlette.staticfiles import StaticFiles
@@ -89,3 +90,30 @@ async def display_ws(ws: WebSocket) -> None:
         pass
     finally:
         hub.disconnect(ws)
+
+
+_MEDIA_RE = re.compile(r"[0-9a-f]{32}(\.bg|\.thumb)?\.jpg")
+
+
+@router.get("/media/{file}")
+async def media(file: str, request: Request) -> FileResponse:
+    client = request.client
+    loopback = (
+        client is not None
+        and client.host in auth.LOOPBACK_HOSTS
+        and auth.is_loopback_host_header(request.headers.get("host"))
+    )
+    if not loopback and not auth.valid_session_cookie(
+        request.app.state.store.secrets.session_secret, request.cookies.get(auth.COOKIE_NAME)
+    ):
+        raise HTTPException(status_code=403, detail="forbidden")
+    if not _MEDIA_RE.fullmatch(file):
+        raise HTTPException(status_code=404, detail="not found")
+    path = request.app.state.photos.path(file)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="not found")
+    return FileResponse(
+        path,
+        media_type="image/jpeg",
+        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "public, max-age=31536000, immutable"},
+    )
