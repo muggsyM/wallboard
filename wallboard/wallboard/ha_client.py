@@ -17,6 +17,11 @@ from .config import ConfigStore
 from .hub import Hub
 
 log = logging.getLogger(__name__)
+# websockets logs frames at DEBUG, which would include the auth message and its token.
+_ws_log = logging.getLogger("wallboard.ha_client.websockets")
+_ws_log.propagate = False
+_ws_log.setLevel(logging.CRITICAL + 1)
+_ws_log.addHandler(logging.NullHandler())
 
 
 class HAError(Exception):
@@ -62,6 +67,7 @@ class HAClient:
         backoff_max: float = 60.0,
         call_timeout: float = 5.0,
         connect_timeout: float = 10.0,
+        close_timeout: float = 1.0,
         forecast_interval: float = 1800.0,
     ) -> None:
         self._store = store
@@ -70,6 +76,7 @@ class HAClient:
         self._backoff_max = backoff_max
         self._call_timeout = call_timeout
         self._connect_timeout = connect_timeout
+        self._close_timeout = close_timeout
         self._forecast_interval = forecast_interval
         self._task: asyncio.Task | None = None
         self._ws: Any = None
@@ -77,6 +84,8 @@ class HAClient:
         self._pending: dict[int, asyncio.Future] = {}
         self._raw: dict[str, dict[str, Any]] = {}  # entity_id -> {"s", "a", "lc"} (unfiltered)
         self._initial = False
+        self._wanted: set[str] = set()
+        self._delay = backoff_base
         self._forecast_task: asyncio.Task | None = None
         self.connected = False
 
@@ -118,7 +127,7 @@ class HAClient:
         await self.start()
 
     async def _run(self) -> None:
-        delay = self._backoff_base
+        self._delay = self._backoff_base
         while True:
             url = self._store.config.ha_url
             token = self._store.secrets.ha_token
@@ -126,24 +135,26 @@ class HAClient:
                 await self._hub.set_status("ha", False)
                 await asyncio.Event().wait()  # idle until restart() cancels us
             try:
-                if await self._session(_ws_url(url), token):
-                    delay = self._backoff_base
+                await self._session(_ws_url(url), token)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # never include the token or payloads in the log
                 log.warning("home assistant connection failed: %s", type(exc).__name__)
             await self._hub.set_status("ha", False)
-            await asyncio.sleep(delay)
-            delay = min(delay * 2, self._backoff_max)
+            await asyncio.sleep(self._delay)
+            self._delay = min(self._delay * 2, self._backoff_max)
 
-    async def _session(self, ws_url: str, token: str) -> bool:
-        """One connection. Returns True if authentication succeeded."""
-        authed = False
+    async def _session(self, ws_url: str, token: str) -> None:
+        """One connection. Resets the backoff as soon as authentication succeeds, so an
+        abnormal drop later in the session (which raises) still retries quickly."""
         try:
-            async with websockets.connect(ws_url, open_timeout=self._connect_timeout, max_size=None) as ws:
+            async with websockets.connect(
+                ws_url, open_timeout=self._connect_timeout, close_timeout=self._close_timeout, max_size=None,
+                logger=_ws_log,
+            ) as ws:
                 self._ws = ws
                 await asyncio.wait_for(self._authenticate(ws, token), self._connect_timeout)
-                authed = True
+                self._delay = self._backoff_base
                 sub_id = await self._subscribe(ws)
                 async for raw in ws:
                     await self._dispatch(json.loads(raw), sub_id)
@@ -152,12 +163,13 @@ class HAClient:
             self.connected = False
             if self._forecast_task is not None:
                 self._forecast_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._forecast_task
                 self._forecast_task = None
             for fut in self._pending.values():
                 if not fut.done():
                     fut.set_exception(HAError("connection lost"))
             self._pending.clear()
-        return authed
 
     async def _authenticate(self, ws, token: str) -> None:
         first = json.loads(await ws.recv())
@@ -172,7 +184,7 @@ class HAClient:
         """Send subscribe_entities; the initial `a` event completes the subscription."""
         self._raw = {}
         self._initial = True
-        wanted = self.wanted_entities()
+        wanted = self._wanted = self.wanted_entities()
         if not wanted:
             await self._reconcile_initial()
             return None
@@ -199,7 +211,7 @@ class HAClient:
             await self._apply_event(msg.get("event") or {})
 
     async def _apply_event(self, ev: dict) -> None:
-        wanted = self.wanted_entities()
+        wanted = self._wanted
         added = {k: v for k, v in (ev.get("a") or {}).items() if k in wanted}
         if self._initial:
             # An initial event is the full picture: sync the hub with exactly what's present.

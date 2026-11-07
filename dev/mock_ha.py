@@ -112,6 +112,7 @@ class MockHA:
         self.host = host
         self.states = copy.deepcopy(STATES)
         self.subscribers = set()  # (websocket, sub_id, frozenset(entity_ids) | None)
+        self.auth_attempts = 0
         self._server = None
         self._ticker = None
 
@@ -134,7 +135,11 @@ class MockHA:
 
     async def set_state(self, entity_id: str, state: str, attrs: dict | None = None) -> None:
         """Set an entity's state (replacing its attributes if given) and push a diff."""
-        st = self.states.setdefault(entity_id, {"s": state, "a": {}})
+        if entity_id not in self.states:
+            self.states[entity_id] = {"s": state, "a": dict(attrs or {})}
+            await self._push_add(entity_id)
+            return
+        st = self.states[entity_id]
         diff = {"+": {"s": state, "lc": time.time()}}
         if attrs is not None:
             removed = [k for k in st["a"] if k not in attrs]
@@ -144,6 +149,25 @@ class MockHA:
             st["a"] = dict(attrs)
         st["s"] = state
         await self._push({entity_id: diff})
+
+    async def remove_state(self, entity_id: str) -> None:
+        """Delete an entity and push a removal event."""
+        self.states.pop(entity_id, None)
+        for ws, sub_id, ids in list(self.subscribers):
+            if ids is None or entity_id in ids:
+                try:
+                    await ws.send(json.dumps({"id": sub_id, "type": "event", "event": {"r": [entity_id]}}))
+                except Exception:
+                    self.subscribers.discard((ws, sub_id, ids))
+
+    async def _push_add(self, entity_id):
+        for ws, sub_id, ids in list(self.subscribers):
+            if ids is None or entity_id in ids:
+                try:
+                    msg = {"id": sub_id, "type": "event", "event": {"a": {entity_id: compressed(self.states[entity_id])}}}
+                    await ws.send(json.dumps(msg))
+                except Exception:
+                    self.subscribers.discard((ws, sub_id, ids))
 
     async def _push(self, changes):
         for ws, sub_id, ids in list(self.subscribers):
@@ -184,6 +208,7 @@ class MockHA:
     async def _handler(self, ws):
         await ws.send(json.dumps({"type": "auth_required", "ha_version": "2026.11.0"}))
         msg = json.loads(await ws.recv())
+        self.auth_attempts += 1
         if msg.get("type") != "auth" or msg.get("access_token") != self.token:
             await ws.send(json.dumps({"type": "auth_invalid", "message": "Invalid access token or password"}))
             return

@@ -145,16 +145,20 @@ def test_filter_attributes_function():
     assert HAClient.filter_attributes(attrs) == {"a": 1, "n": 5}
 
 
-async def test_bad_token_sets_status_false_and_retries(env):
+async def test_bad_token_sets_status_false_and_retries(env, caplog):
+    caplog.set_level("DEBUG")
     env.store.save_secrets(env.store.secrets.model_copy(update={"ha_token": "wrong"}))
     await env.client.start()
-    await asyncio.sleep(0.3)  # several rejected attempts
+    await wait_for(lambda: env.mock.auth_attempts >= 2)  # it keeps retrying on its own
     assert status(env.hub) is False and not env.client.connected
     assert ha_snapshot(env.hub) == {}
     env.store.save_secrets(env.store.secrets.model_copy(update={"ha_token": "dev-token"}))
     await env.client.restart()
     await wait_for(lambda: status(env.hub) is True)
     assert set(ha_snapshot(env.hub)) == WANTED
+    # (the in-process mock server's own websockets logging is test-side, not the client's)
+    client_logs = "\n".join(f"{r.name} {r.getMessage()}" for r in caplog.records if r.name != "websockets.server")
+    assert "wrong" not in client_logs and "dev-token" not in client_logs
 
 
 async def test_reconnect_after_drop(env):
@@ -241,3 +245,59 @@ def test_app_without_ha_url_starts_and_stops(data_dir):
     with TestClient(app) as c:
         assert c.get("/healthz").json() == {"ok": True}
         assert isinstance(app.state.ha, HAClient)
+
+
+async def test_backoff_resets_after_abnormal_drops(env):
+    client = HAClient(env.store, env.hub, backoff_base=0.1, backoff_max=5.0, call_timeout=1.0)
+    await client.start()
+    try:
+        loop = asyncio.get_running_loop()
+        for _ in range(4):
+            await wait_for(lambda: client.connected and env.mock.subscribers)
+            dropped = loop.time()
+            for ws, _sid, _ids in list(env.mock.subscribers):
+                ws.transport.abort()  # no close frame: ConnectionClosedError on the client
+            await wait_for(lambda: not client.connected)
+            await wait_for(lambda: client.connected and env.mock.subscribers, timeout=1.0)
+            assert loop.time() - dropped < 0.35  # about backoff_base, not doubling
+    finally:
+        await client.stop()
+
+
+async def test_state_for_new_entity_is_published(env):
+    env.store.save_config(env.store.config.model_copy(update={"status_entities": ["binary_sensor.front_door", "sensor.new_one"]}))
+    await env.client.start()
+    await wait_for(lambda: status(env.hub) is True)
+    assert "sensor.new_one" not in ha_snapshot(env.hub)
+    await env.mock.set_state("sensor.new_one", "5")  # not in HA yet: mock sends an add event
+    await wait_for(lambda: "sensor.new_one" in ha_snapshot(env.hub))
+    assert ha_snapshot(env.hub)["sensor.new_one"]["state"] == "5"
+
+
+async def test_removal_event_deletes_entity(env):
+    await env.client.start()
+    await wait_for(lambda: status(env.hub) is True)
+    await env.mock.remove_state("light.hallway")
+    await wait_for(lambda: "light.hallway" not in ha_snapshot(env.hub))
+    assert "light.kitchen" in ha_snapshot(env.hub)
+
+
+async def test_pending_call_fails_fast_on_disconnect(env):
+    client = HAClient(env.store, env.hub, call_timeout=3.0, backoff_base=0.05)
+    await client.start()
+    await wait_for(lambda: client.connected)
+
+    async def never(ws, m):
+        await asyncio.sleep(0.5)
+
+    env.mock._call_service = never
+    call = asyncio.create_task(client.call_service("light", "toggle", "light.kitchen"))
+    await asyncio.sleep(0.1)
+    loop = asyncio.get_running_loop()
+    t0 = loop.time()
+    for ws, _sid, _ids in list(env.mock.subscribers):
+        ws.transport.abort()
+    with pytest.raises(HAError):
+        await call
+    assert loop.time() - t0 < 1.0
+    await client.stop()
