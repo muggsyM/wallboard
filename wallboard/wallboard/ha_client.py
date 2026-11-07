@@ -1,0 +1,330 @@
+"""Home Assistant WebSocket client: auth, subscribe_entities, call_service, forecasts, reconnect."""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import itertools
+import json
+import logging
+from datetime import datetime, timezone
+from typing import Any
+from urllib.parse import urlsplit, urlunsplit
+
+import websockets
+
+from .config import ConfigStore
+from .hub import Hub
+
+log = logging.getLogger(__name__)
+
+
+class HAError(Exception):
+    """A Home Assistant request failed (HA error, timeout, or no connection)."""
+
+
+def filter_attributes(attrs: dict[str, Any]) -> dict[str, Any]:
+    """Drop anything that may carry a credential (same rule as custom_components/dakboard)."""
+    out = {}
+    for key, value in attrs.items():
+        k = key.lower()
+        if "token" in k or "picture" in k or "password" in k or "secret" in k:
+            continue
+        if isinstance(value, str) and "token=" in value.lower():
+            continue
+        out[key] = value
+    return out
+
+
+def _iso(ts: Any) -> str | None:
+    if isinstance(ts, (int, float)):
+        return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+    return None
+
+
+def _ws_url(ha_url: str) -> str:
+    parts = urlsplit(ha_url)
+    scheme = {"http": "ws", "https": "wss"}.get(parts.scheme)
+    if scheme is None or not parts.netloc:
+        raise ValueError("ha_url must be an http(s) URL")
+    return urlunsplit((scheme, parts.netloc, parts.path.rstrip("/") + "/api/websocket", "", ""))
+
+
+class HAClient:
+    filter_attributes = staticmethod(filter_attributes)
+
+    def __init__(
+        self,
+        store: ConfigStore,
+        hub: Hub,
+        *,
+        backoff_base: float = 1.0,
+        backoff_max: float = 60.0,
+        call_timeout: float = 5.0,
+        connect_timeout: float = 10.0,
+        forecast_interval: float = 1800.0,
+    ) -> None:
+        self._store = store
+        self._hub = hub
+        self._backoff_base = backoff_base
+        self._backoff_max = backoff_max
+        self._call_timeout = call_timeout
+        self._connect_timeout = connect_timeout
+        self._forecast_interval = forecast_interval
+        self._task: asyncio.Task | None = None
+        self._ws: Any = None
+        self._ids = itertools.count(1)
+        self._pending: dict[int, asyncio.Future] = {}
+        self._raw: dict[str, dict[str, Any]] = {}  # entity_id -> {"s", "a", "lc"} (unfiltered)
+        self._initial = False
+        self._forecast_task: asyncio.Task | None = None
+        self.connected = False
+
+    # ---- config -------------------------------------------------------------------------
+
+    def wanted_entities(self) -> set[str]:
+        cfg = self._store.config
+        wanted: set[str] = set()
+        for room in cfg.rooms:
+            wanted.add(room.temperature_entity)
+            if room.humidity_entity:
+                wanted.add(room.humidity_entity)
+            wanted.update(room.light_entities)
+        wanted.update(t.entity_id for t in cfg.tiles)
+        wanted.update(cfg.status_entities)
+        wanted.update(cfg.quick_tiles)
+        wanted.update(m.person_entity for m in cfg.members if m.person_entity)
+        if cfg.weather_entity:
+            wanted.add(cfg.weather_entity)
+        return wanted
+
+    # ---- lifecycle ----------------------------------------------------------------------
+
+    async def start(self) -> None:
+        if self._task is None or self._task.done():
+            self._task = asyncio.create_task(self._run(), name="ha-client")
+
+    async def stop(self) -> None:
+        task, self._task = self._task, None
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        self.connected = False
+        await self._hub.set_status("ha", False)
+
+    async def restart(self) -> None:
+        await self.stop()
+        await self.start()
+
+    async def _run(self) -> None:
+        delay = self._backoff_base
+        while True:
+            url = self._store.config.ha_url
+            token = self._store.secrets.ha_token
+            if not url or not token:
+                await self._hub.set_status("ha", False)
+                await asyncio.Event().wait()  # idle until restart() cancels us
+            try:
+                if await self._session(_ws_url(url), token):
+                    delay = self._backoff_base
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # never include the token or payloads in the log
+                log.warning("home assistant connection failed: %s", type(exc).__name__)
+            await self._hub.set_status("ha", False)
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, self._backoff_max)
+
+    async def _session(self, ws_url: str, token: str) -> bool:
+        """One connection. Returns True if authentication succeeded."""
+        authed = False
+        try:
+            async with websockets.connect(ws_url, open_timeout=self._connect_timeout, max_size=None) as ws:
+                self._ws = ws
+                await asyncio.wait_for(self._authenticate(ws, token), self._connect_timeout)
+                authed = True
+                sub_id = await self._subscribe(ws)
+                async for raw in ws:
+                    await self._dispatch(json.loads(raw), sub_id)
+        finally:
+            self._ws = None
+            self.connected = False
+            if self._forecast_task is not None:
+                self._forecast_task.cancel()
+                self._forecast_task = None
+            for fut in self._pending.values():
+                if not fut.done():
+                    fut.set_exception(HAError("connection lost"))
+            self._pending.clear()
+        return authed
+
+    async def _authenticate(self, ws, token: str) -> None:
+        first = json.loads(await ws.recv())
+        if first.get("type") != "auth_required":
+            raise HAError("unexpected greeting")
+        await ws.send(json.dumps({"type": "auth", "access_token": token}))
+        reply = json.loads(await ws.recv())
+        if reply.get("type") != "auth_ok":
+            raise HAError("authentication rejected")
+
+    async def _subscribe(self, ws) -> int | None:
+        """Send subscribe_entities; the initial `a` event completes the subscription."""
+        self._raw = {}
+        self._initial = True
+        wanted = self.wanted_entities()
+        if not wanted:
+            await self._reconcile_initial()
+            return None
+        sub_id = next(self._ids)
+        await ws.send(json.dumps({"id": sub_id, "type": "subscribe_entities", "entity_ids": sorted(wanted)}))
+        return sub_id
+
+    # ---- incoming messages --------------------------------------------------------------
+
+    async def _dispatch(self, msg: dict, sub_id: int | None) -> None:
+        mid = msg.get("id")
+        kind = msg.get("type")
+        if kind == "result" and mid in self._pending:
+            fut = self._pending.pop(mid)
+            if not fut.done():
+                if msg.get("success"):
+                    fut.set_result(msg.get("result"))
+                else:
+                    fut.set_exception(HAError((msg.get("error") or {}).get("message", "request failed")))
+        elif kind == "result" and mid == sub_id:
+            if not msg.get("success"):
+                raise HAError("subscribe_entities rejected")
+        elif kind == "event" and mid == sub_id:
+            await self._apply_event(msg.get("event") or {})
+
+    async def _apply_event(self, ev: dict) -> None:
+        wanted = self.wanted_entities()
+        added = {k: v for k, v in (ev.get("a") or {}).items() if k in wanted}
+        if self._initial:
+            # An initial event is the full picture: sync the hub with exactly what's present.
+            self._initial = False
+            self._raw = {}
+            for eid, st in added.items():
+                self._raw[eid] = {"s": st.get("s"), "a": dict(st.get("a") or {}), "lc": st.get("lc")}
+            await self._reconcile_initial()
+            return
+        for eid, st in added.items():
+            self._raw[eid] = {"s": st.get("s"), "a": dict(st.get("a") or {}), "lc": st.get("lc")}
+            await self._publish_entity(eid)
+        for eid, diff in (ev.get("c") or {}).items():
+            cur = self._raw.get(eid)
+            if cur is None:
+                continue
+            plus = diff.get("+") or {}
+            if "s" in plus:
+                cur["s"] = plus["s"]
+            if plus.get("a"):
+                cur["a"].update(plus["a"])
+            if "lc" in plus:
+                cur["lc"] = plus["lc"]
+            for key in (diff.get("-") or {}).get("a", []):
+                cur["a"].pop(key, None)
+            await self._publish_entity(eid)
+        for eid in ev.get("r") or []:
+            if self._raw.pop(eid, None) is not None:
+                await self._hub.publish({"type": "ha", "entity_id": eid, "state": None})
+
+    async def _reconcile_initial(self) -> None:
+        present = set(self._raw)
+        for eid in set(self._hub.snapshot()["ha"]) - present:
+            await self._hub.publish({"type": "ha", "entity_id": eid, "state": None})
+        for eid in present:
+            await self._publish_entity(eid)
+        self.connected = True
+        if self._forecast_task is None:
+            self._forecast_task = asyncio.create_task(self._forecast_loop(), name="ha-forecast")
+        await self._hub.set_status("ha", True)
+
+    async def _publish_entity(self, eid: str) -> None:
+        raw = self._raw[eid]
+        state = {
+            "state": raw["s"],
+            "attributes": filter_attributes(raw["a"]),
+            "last_changed": _iso(raw.get("lc")) or datetime.now(timezone.utc).isoformat(),
+        }
+        await self._hub.publish({"type": "ha", "entity_id": eid, "state": state})
+
+    # ---- requests -----------------------------------------------------------------------
+
+    async def call_service(
+        self,
+        domain: str,
+        service: str,
+        entity_id: str | None = None,
+        *,
+        service_data: dict | None = None,
+        target: dict | None = None,
+        return_response: bool = False,
+    ) -> dict | None:
+        """Call a HA service; returns HA's result. Raises HAError on error, timeout or no connection."""
+        ws = self._ws
+        if ws is None or not self.connected:
+            raise HAError("not connected to Home Assistant")
+        mid = next(self._ids)
+        msg: dict[str, Any] = {"id": mid, "type": "call_service", "domain": domain, "service": service}
+        if service_data:
+            msg["service_data"] = service_data
+        if target is None and entity_id:
+            target = {"entity_id": entity_id}
+        if target:
+            msg["target"] = target
+        if return_response:
+            msg["return_response"] = True
+        fut: asyncio.Future = asyncio.get_running_loop().create_future()
+        self._pending[mid] = fut
+        try:
+            await ws.send(json.dumps(msg))
+            return await asyncio.wait_for(fut, self._call_timeout)
+        except asyncio.TimeoutError:
+            raise HAError("Home Assistant did not answer in time") from None
+        except HAError:
+            raise
+        except Exception as exc:
+            raise HAError(f"request failed: {type(exc).__name__}") from None
+        finally:
+            self._pending.pop(mid, None)
+
+    async def get_forecast(self) -> dict | None:
+        entity = self._store.config.weather_entity
+        if not entity:
+            return None
+        try:
+            result = await self.call_service(
+                "weather",
+                "get_forecasts",
+                service_data={"type": "daily"},
+                target={"entity_id": entity},
+                return_response=True,
+            )
+            forecast = result["response"][entity]["forecast"]
+            daily = [
+                {
+                    "date": str(d["datetime"])[:10],
+                    "condition": d.get("condition"),
+                    "high": d.get("temperature"),
+                    "low": d.get("templow"),
+                    "precip_probability": d.get("precipitation_probability"),
+                }
+                for d in forecast
+            ]
+        except (HAError, KeyError, TypeError) as exc:
+            log.warning("forecast unavailable: %s", type(exc).__name__)
+            return None
+        cur = self._raw.get(entity) or {}
+        return {
+            "current": {"condition": cur.get("s"), "temperature": (cur.get("a") or {}).get("temperature")},
+            "daily": daily,
+        }
+
+    async def _forecast_loop(self) -> None:
+        while True:
+            payload = await self.get_forecast()
+            if payload is not None:
+                await self._hub.publish({"type": "weather", "weather": payload})
+            await asyncio.sleep(self._forecast_interval)
