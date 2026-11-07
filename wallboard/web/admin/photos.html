@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Wallboard</title>
+  <link rel="stylesheet" href="/admin-static/admin.css">
+  <script type="module" src="/static/admin/photos.js"></script>
+</head>
+<body class="settings photos">
+  <header class="topbar">
+    <h1 id="title">Wallboard</h1>
+    <nav>
+      <a id="settings-link" href="/settings">Settings</a>
+      <form method="post" action="/logout"><button id="logout" type="submit" class="link">Log out</button></form>
+    </nav>
+  </header>
+  <main id="app"><p class="muted">…</p></main>
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+  <dialog id="photo-menu" class="sheet"></dialog>
+</body>
+</html>

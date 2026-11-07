@@ -216,6 +216,16 @@ def test_api_requires_admin(app):
     assert anon.get("/api/admin/photos.zip").status_code == 401
 
 
+def test_photos_page_requires_admin(app):
+    lan = ("192.168.1.20", 50000)
+    r = make_client(app, peer=lan, host="192.168.1.10:8080", admin=False).get("/photos", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/login?next=/photos"
+    r = make_client(app, peer=lan, host="192.168.1.10:8080").get("/photos", follow_redirects=False)
+    assert r.status_code == 200 and "text/html" in r.headers["content-type"]
+    assert r.headers["cache-control"] == "no-store"
+    assert "/static/admin/photos.js" in r.text
+
+
 # --- fix round 1 ---
 
 from starlette.formparsers import MultiPartParser  # noqa: E402

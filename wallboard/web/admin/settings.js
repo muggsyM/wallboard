@@ -10,8 +10,8 @@ import { t, setLanguage, loadLanguage } from "/static/shared/i18n.js";
 import * as M from "/static/admin/settings-model.js";
 import { h, field, textInput, numberInput, checkbox, select, button, badge, setEditHandler } from "/static/admin/dom.js";
 import { makeReorderable } from "/static/admin/reorder.js";
+import { api } from "/static/admin/api.js";
 
-const CSRF = { "X-Requested-With": "wallboard" };
 const MEMBER_COLORS = ["#4f8cff", "#ff6b9d", "#ffb547", "#4cd4a0", "#b18cff", "#ff7a59"];
 const SECRET_FIELDS = ["ha_token", "google_client_id", "google_client_secret"];
 
@@ -91,35 +91,6 @@ function entityList(list, loc, datalist) {
   };
   draw();
   return wrap;
-}
-
-// ---- API --------------------------------------------------------------------------------------
-
-class ApiError extends Error {
-  constructor(status, data) {
-    const detail = data?.detail;
-    super(typeof detail === "string" ? detail : `HTTP ${status}`);
-    this.status = status;
-    this.errors = Array.isArray(detail) ? detail : null;
-  }
-}
-
-async function api(method, path, body) {
-  const headers = method === "GET" ? {} : { ...CSRF };
-  if (body !== undefined) headers["Content-Type"] = "application/json";
-  const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), credentials: "same-origin" });
-  if (res.status === 401) {
-    location.href = `/login?next=${encodeURIComponent("/settings")}`;
-    throw new ApiError(401, null);
-  }
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {
-    /* empty or non-JSON body */
-  }
-  if (!res.ok) throw new ApiError(res.status, data);
-  return data;
 }
 
 // ---- sections -----------------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""Admin routes: login/logout, the settings page and API, HA test/entities and Google sign-in."""
+"""Admin routes: login/logout, the settings and photos pages, the settings API, HA test/entities and Google sign-in."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from ..ha_client import HAError, probe_connection, wanted_entities_for
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 LOGIN_HTML = WEB_DIR / "admin" / "login.html"
 SETTINGS_HTML = WEB_DIR / "admin" / "settings.html"
+PHOTOS_HTML = WEB_DIR / "admin" / "photos.html"
 ADMIN_CSS = WEB_DIR / "admin" / "admin.css"
 MIN_PASSWORD = 8
 HA_TEST_TIMEOUT = 5.0
@@ -93,6 +94,11 @@ async def logout() -> Response:
 @router.get("/settings", dependencies=[Depends(auth.require_admin)], include_in_schema=False)
 async def settings_page() -> FileResponse:
     return FileResponse(SETTINGS_HTML, media_type="text/html", headers={"Cache-Control": "no-store"})
+
+
+@router.get("/photos", dependencies=[Depends(auth.require_admin)], include_in_schema=False)
+async def photos_page() -> FileResponse:
+    return FileResponse(PHOTOS_HTML, media_type="text/html", headers={"Cache-Control": "no-store"})
 
 
 # ---- settings API ----
