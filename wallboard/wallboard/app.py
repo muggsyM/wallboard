@@ -37,7 +37,8 @@ def create_app(data_dir: Path) -> FastAPI:
     access_log = logging.getLogger("uvicorn.access")
     if not any(isinstance(f, RedactCallbackParams) for f in access_log.filters):
         access_log.addFilter(RedactCallbackParams())
-    app = FastAPI(title="wallboard", lifespan=_lifespan)
+    # No interactive API docs: nothing to explore for strangers on the LAN.
+    app = FastAPI(title="wallboard", lifespan=_lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(BodyLimitMiddleware)
     app.state.store = ConfigStore(Path(data_dir))
     app.state.login_limiter = LoginLimiter()

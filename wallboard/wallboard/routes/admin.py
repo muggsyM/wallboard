@@ -220,7 +220,8 @@ def _reconcile(old: Config, new: Config) -> tuple[Config, list[dict[str, Any]]]:
 
 
 def _ha_inputs(cfg: Config) -> tuple:
-    return (cfg.ha_url, cfg.weather_entity, wanted_entities_for(cfg))
+    # timezone: forecast dates are computed in it, so a change re-fetches the forecast.
+    return (cfg.ha_url, cfg.weather_entity, cfg.timezone, wanted_entities_for(cfg))
 
 
 def _calendar_inputs(cfg: Config) -> tuple:

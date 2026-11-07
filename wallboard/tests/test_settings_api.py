@@ -169,6 +169,8 @@ def test_ha_change_restarts_client(app):
     assert spy.calls == 4
     assert c.put("/api/admin/secrets", json={"ha_token": "new"}).status_code == 200
     assert spy.calls == 4  # unchanged token
+    assert c.put("/api/admin/config", json=full_config(app, timezone="Europe/London")).status_code == 200
+    assert spy.calls == 5  # forecast dates follow the timezone
 
 
 @pytest.fixture
