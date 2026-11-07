@@ -8,7 +8,9 @@ from fastapi.testclient import TestClient
 
 from wallboard.app import create_app
 from wallboard.config import Config, ConfigStore, Member, Room, Tile
-from wallboard.ha_client import HAClient, HAError, filter_attributes
+from zoneinfo import ZoneInfo
+
+from wallboard.ha_client import HAClient, HAError, filter_attributes, forecast_date
 from wallboard.hub import Hub
 
 _spec = importlib.util.spec_from_file_location(
@@ -301,3 +303,34 @@ async def test_pending_call_fails_fast_on_disconnect(env):
         await call
     assert loop.time() - t0 < 1.0
     await client.stop()
+
+
+PRAGUE = ZoneInfo("Europe/Prague")
+
+
+def test_forecast_date_local_midnight_in_utc():
+    # 7 Nov 00:00 in Prague, sent as UTC
+    assert forecast_date("2026-11-06T23:00:00+00:00", PRAGUE) == "2026-11-07"
+
+
+def test_forecast_date_noon_utc():
+    assert forecast_date("2026-11-07T12:00:00+00:00", PRAGUE) == "2026-11-07"
+    assert forecast_date("2026-11-07T23:30:00Z", PRAGUE) == "2026-11-08"
+
+
+def test_forecast_date_bare_date_kept():
+    assert forecast_date("2026-11-07", PRAGUE) == "2026-11-07"
+
+
+def test_forecast_date_naive_datetime_is_local():
+    assert forecast_date("2026-11-07T00:00:00", PRAGUE) == "2026-11-07"
+
+
+async def test_forecast_uses_config_timezone(env, monkeypatch):
+    monkeypatch.setattr(mock_ha, "_forecast", lambda: [
+        {"datetime": "2026-11-06T23:00:00+00:00", "condition": "sunny", "temperature": 10, "templow": 2},
+    ])
+    await env.client.start()
+    await wait_for(lambda: env.client.connected)
+    payload = await env.client.get_forecast()
+    assert payload["daily"][0]["date"] == "2026-11-07"

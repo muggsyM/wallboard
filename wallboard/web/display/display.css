@@ -213,9 +213,10 @@ html, body {
 }
 .wb-chip b { flex: none; font-weight: 500; margin-right: 1.4cqw; opacity: .85; font-variant-numeric: tabular-nums; }
 .wb-chip-ti { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.wb-chip.all { border-left: none; padding-left: 2.6cqw; color: #15171d; font-weight: 500; }
+/* Text colour is set per chip from the member colour (lib/color.js readableText). */
+.wb-chip.all { border-left: none; padding-left: 2.6cqw; font-weight: 500; }
 .wb-chip.past { opacity: .4; }
-.wb-more { flex: none; margin-left: 1cqw; opacity: .6; }
+.wb-more { flex: none; font-size: 2.8cqw; line-height: 1.15; padding-left: 2.6cqw; opacity: .75; }
 .wb-empty { font-size: 3cqw; opacity: .4; padding-top: 1cqw; }
 
 /* ---------- page dots ---------- */

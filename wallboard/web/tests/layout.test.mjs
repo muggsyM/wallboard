@@ -1,7 +1,8 @@
 // Mirrors wallboard/tests/test_events.py (event_days, bucket_by_day) plus the Task 7 review extras.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { localDate, addDays, daysOf, bucket, isPast, spanPart, monthGrid, noonOf } from "../display/lib/layout.js";
+import { localDate, addDays, daysOf, bucket, isPast, spanPart, monthGrid, noonOf, pickVisible } from "../display/lib/layout.js";
+import { readableText } from "../display/lib/color.js";
 
 const TZ = "Europe/Prague";
 const timed = (start, end, kw = {}) => ({
@@ -132,4 +133,51 @@ test("monthGrid is Monday-first, 6 weeks", () => {
 test("noonOf is local noon of the date", () => {
   assert.equal(noonOf("2026-11-07", TZ).toISOString(), "2026-11-07T11:00:00.000Z");
   assert.equal(localDate(noonOf("2026-11-07", "Pacific/Kiritimati"), "Pacific/Kiritimati"), "2026-11-07");
+});
+
+test("pickVisible: everything fits", () => {
+  const evs = [allDay("2026-11-07", "2026-11-08", { id: "a" }), timed("2026-11-07T07:00:00+01:00", "2026-11-07T08:00:00+01:00", { id: "p" })];
+  assert.deepEqual(pickVisible(evs, 2, () => true), { shown: evs, hidden: 0 });
+  assert.deepEqual(pickVisible(evs, 5, () => true), { shown: evs, hidden: 0 });
+});
+
+test("pickVisible: hides past timed events first, keeps all-day, keeps order", () => {
+  const a = allDay("2026-11-07", "2026-11-08", { id: "a" });
+  const p1 = timed("2026-11-07T06:00:00+01:00", "2026-11-07T06:30:00+01:00", { id: "p1" });
+  const p2 = timed("2026-11-07T07:00:00+01:00", "2026-11-07T08:00:00+01:00", { id: "p2" });
+  const f1 = timed("2026-11-07T22:00:00+01:00", "2026-11-07T23:00:00+01:00", { id: "f1" });
+  const f2 = timed("2026-11-07T23:00:00+01:00", "2026-11-08T01:00:00+01:00", { id: "f2" });
+  const now = Date.parse("2026-11-07T21:13:00+01:00");
+  const past = (ev) => isPast(ev, now, TZ);
+  let r = pickVisible([a, p1, p2, f1, f2], 3, past);
+  assert.deepEqual(r.shown.map((e) => e.id), ["a", "f1", "f2"]);
+  assert.equal(r.hidden, 2);
+  r = pickVisible([a, p1, p2, f1, f2], 4, past); // the earliest past event goes first
+  assert.deepEqual(r.shown.map((e) => e.id), ["a", "p2", "f1", "f2"]);
+  assert.equal(r.hidden, 1);
+  r = pickVisible([a, p1, p2, f1, f2], 2, () => true); // all past: all-day still kept
+  assert.deepEqual(r.shown.map((e) => e.id), ["a", "f2"]);
+  assert.equal(r.hidden, 3);
+});
+
+test("pickVisible: then trims from the end", () => {
+  const evs = ["a", "b", "c", "d"].map((id, i) => timed(`2026-11-07T1${i}:00:00+01:00`, `2026-11-07T1${i}:30:00+01:00`, { id }));
+  const r = pickVisible(evs, 2, () => false);
+  assert.deepEqual(r.shown.map((e) => e.id), ["a", "b"]);
+  assert.equal(r.hidden, 2);
+  assert.deepEqual(pickVisible(evs, 0, () => false), { shown: [], hidden: 4 });
+  // one past event hidden first, then one from the end
+  const r2 = pickVisible(evs, 2, (ev) => ev.id === "b");
+  assert.deepEqual(r2.shown.map((e) => e.id), ["a", "c"]);
+  assert.equal(r2.hidden, 2);
+});
+
+test("readableText picks black or white by luminance", () => {
+  assert.equal(readableText("#ffffff"), "#000");
+  assert.equal(readableText("#f0a23b"), "#000"); // orange
+  assert.equal(readableText("#8c6cf0"), "#000"); // light purple
+  assert.equal(readableText("#1a237e"), "#fff"); // navy
+  assert.equal(readableText("#000"), "#fff");
+  assert.equal(readableText("#333333cc"), "#fff");
+  assert.equal(readableText("not a colour"), "#fff");
 });

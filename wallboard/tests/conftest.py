@@ -3,6 +3,12 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _no_dev_calendar(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A developer's exported WALLBOARD_DEV_CALENDAR must not change the tests."""
+    monkeypatch.delenv("WALLBOARD_DEV_CALENDAR", raising=False)
+
+
 @pytest.fixture
 def data_dir(tmp_path: Path) -> Path:
     return tmp_path

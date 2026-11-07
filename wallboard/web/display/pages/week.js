@@ -1,14 +1,16 @@
 // "Next 7 days": seven equal-height rows starting today, each with weekday, day number,
 // that day's forecast and the day's events as chips (member colour on the left border,
-// all-day events solid, past events faded). A row whose chips do not fit drops chips
-// from the end until "+N more" fits. Look: mockups/portrait-v1.html screen 2.
+// all-day events solid, past events faded). A row whose chips do not fit shows fewer
+// (pickVisible: past timed events go first, then from the end) plus a "+N more" line.
+// Look: mockups/portrait-v1.html screen 2.
 //
-// Re-renders only when the inputs change (calendar/weather payloads, language, today,
-// which events are past), checked on every store update and once a minute.
+// Rows are rebuilt only when the calendar/weather payload, language, zone or local minute
+// changes (checked on every store update and every 20 s); HA deltas only touch the header.
 import { renderHeader, safeColor } from "../header.js";
 import { t, getLanguage, fmtTime, fmtShortDayMonth, fmtWeekdayShort } from "../../shared/i18n.js";
 import { WEATHER_ICONS } from "../../shared/ha-format.js";
-import { localDate, addDays, noonOf, bucket, daysOf, isPast } from "../lib/layout.js";
+import { localDate, addDays, noonOf, bucket, daysOf, isPast, pickVisible } from "../lib/layout.js";
+import { readableText } from "../lib/color.js";
 
 const DAYS = 7;
 const MINUTE_CHECK_MS = 20000;
@@ -58,6 +60,7 @@ function chip(ev, iso, tz, now) {
   if (ev.all_day) {
     c.classList.add("all");
     c.style.background = color;
+    c.style.color = readableText(color);
   } else {
     c.style.borderLeftColor = color;
   }
@@ -70,18 +73,15 @@ function chip(ev, iso, tz, now) {
 
 const overflows = (box) => box.scrollHeight > box.clientHeight + 1;
 
-// Drop chips from the end until the remaining ones plus "+N more" fit (at least one stays).
-function fitChips(box) {
-  const chips = [...box.children];
-  if (chips.length < 2 || !overflows(box)) return;
-  let hidden = 0;
-  let more = null;
-  while (chips.length > 1 && (hidden === 0 || overflows(box))) {
-    chips.pop().remove();
-    hidden += 1;
-    more?.remove();
-    more = el("span", "wb-more", `· ${t("more_n", { n: hidden })}`);
-    chips[chips.length - 1].append(more);
+// Show all chips if they fit; otherwise the largest pickVisible() selection that fits
+// together with its own "+N more" line (at least one chip stays). Needs the row laid out.
+function fitChips(box, events, iso, tz, now) {
+  if (events.length < 2 || !overflows(box)) return;
+  const past = (ev) => isPast(ev, now, tz);
+  for (let cap = events.length - 1; cap >= 1; cap--) {
+    const { shown, hidden } = pickVisible(events, cap, past);
+    box.replaceChildren(...shown.map((ev) => chip(ev, iso, tz, now)), el("div", "wb-more", t("more_n", { n: hidden })));
+    if (!overflows(box)) return;
   }
 }
 
@@ -102,7 +102,7 @@ function row(iso, today, events, weather, tz, now) {
   if (events.length) chips.append(...events.map((ev) => chip(ev, iso, tz, now)));
   else chips.append(el("div", "wb-empty", t("no_events")));
   r.append(wd, chips);
-  return { r, chips };
+  return { r, chips, events, iso };
 }
 
 export default {
@@ -113,31 +113,26 @@ export default {
     root.innerHTML = `<div class="wb-page-header"></div><div class="wb-week"></div>`;
     const header = root.querySelector(".wb-page-header");
     const list = root.querySelector(".wb-week");
-    let last = null; // inputs of the last render
+    let last = null; // key of the last row build
     let alive = true;
 
-    function inputs(state, now) {
-      const tz = state.config?.timezone || "Europe/Prague";
-      const today = localDate(now, tz);
-      const days = bucket(state.calendar?.events || [], today, DAYS, tz);
-      const past = [];
-      for (const evs of days.values()) for (const ev of evs) if (isPast(ev, now, tz)) past.push(ev.id);
-      return { tz, today, days, calendar: state.calendar, weather: state.weather, lang: getLanguage(), past: past.join("|") };
-    }
-
     const same = (a, b) =>
-      a && b && a.tz === b.tz && a.today === b.today && a.calendar === b.calendar && a.weather === b.weather &&
-      a.lang === b.lang && a.past === b.past;
+      a && b && a.tz === b.tz && a.minute === b.minute && a.calendar === b.calendar && a.weather === b.weather &&
+      a.lang === b.lang;
 
     function render(state, force = false) {
       const now = Date.now();
-      const inp = inputs(state, now);
-      renderHeader(header, state, { titleKey: "this_week", subtitle: weekSubtitle(inp.today, addDays(inp.today, DAYS - 1), inp.tz) });
-      if (!force && same(inp, last)) return;
-      last = inp;
-      const rows = [...inp.days].map(([iso, evs]) => row(iso, inp.today, evs, inp.weather, inp.tz, now));
+      const tz = state.config?.timezone || "Europe/Prague";
+      const today = localDate(now, tz);
+      renderHeader(header, state, { titleKey: "this_week", subtitle: weekSubtitle(today, addDays(today, DAYS - 1), tz) });
+      const key = { tz, minute: Math.floor(now / 60000), calendar: state.calendar, weather: state.weather, lang: getLanguage() };
+      if (!force && same(key, last)) return;
+      last = key;
+      const days = bucket(state.calendar?.events || [], today, DAYS, tz);
+      const rows = [...days].map(([iso, evs]) => row(iso, today, evs, state.weather, tz, now));
       list.replaceChildren(...rows.map((x) => x.r));
-      for (const x of rows) fitChips(x.chips); // after layout: measuring needs the rows in place
+      // After layout: measuring needs the rows in place.
+      for (const x of rows) fitChips(x.chips, x.events, x.iso, tz, now);
     }
 
     const refit = () => alive && render(ctx.store.get(), true);
@@ -156,7 +151,7 @@ export default {
       });
       ro.observe(list);
     }
-    document.fonts?.ready.then(refit);
+    if (document.fonts && document.fonts.status !== "loaded") document.fonts.ready.then(refit);
     document.fonts?.addEventListener?.("loadingdone", refit);
 
     render(ctx.store.get());

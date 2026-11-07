@@ -7,9 +7,10 @@ import contextlib
 import itertools
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
+from zoneinfo import ZoneInfo
 
 import websockets
 
@@ -53,6 +54,22 @@ def _ws_url(ha_url: str) -> str:
     if scheme is None or not parts.netloc:
         raise ValueError("ha_url must be an http(s) URL")
     return urlunsplit((scheme, parts.netloc, parts.path.rstrip("/") + "/api/websocket", "", ""))
+
+
+def forecast_date(value: object, tz: ZoneInfo) -> str:
+    """Local date of a forecast entry's datetime in tz.
+
+    Integrations often send daily forecasts as local midnight in UTC
+    ("2026-11-06T23:00:00+00:00" = 7 Nov in Prague), so a datetime is converted to tz
+    before taking its date; a naive one is taken as local, a bare date is kept.
+    """
+    text = str(value).replace("Z", "+00:00")
+    if len(text) == 10:
+        return date.fromisoformat(text).isoformat()
+    dt = datetime.fromisoformat(text)
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(tz)
+    return dt.date().isoformat()
 
 
 class HAClient:
@@ -315,9 +332,10 @@ class HAClient:
                 return_response=True,
             )
             forecast = result["response"][entity]["forecast"]
+            tz = ZoneInfo(self._store.config.timezone)
             daily = [
                 {
-                    "date": str(d["datetime"])[:10],
+                    "date": forecast_date(d["datetime"], tz),
                     "condition": d.get("condition"),
                     "high": d.get("temperature"),
                     "low": d.get("templow"),
@@ -325,7 +343,7 @@ class HAClient:
                 }
                 for d in forecast
             ]
-        except (HAError, KeyError, TypeError) as exc:
+        except (HAError, KeyError, TypeError, ValueError) as exc:
             log.warning("forecast unavailable: %s", type(exc).__name__)
             return None
         cur = self._raw.get(entity) or {}

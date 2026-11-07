@@ -13,6 +13,7 @@
 //   bucket(events, firstISO, days, tz)-> Map iso -> events, every day of the window a key
 //   isPast(event, now, tz)            -> event ended at or before now
 //   spanPart(event, iso)              -> "single" | "start" | "middle" | "end"
+//   pickVisible(events, capacity, pastFn) -> {shown, hidden} when a day has too many events
 //   monthGrid(todayISO)               -> 42 iso dates, Monday-first, 6 weeks
 
 const FALLBACK_TZ = "Europe/Prague";
@@ -132,6 +133,32 @@ export function spanPart(event, iso) {
   if (iso === days[0]) return "start";
   if (iso === days[days.length - 1]) return "end";
   return "middle";
+}
+
+// Which of a day's (sorted) events to show when only `capacity` fit (ruling R17):
+// past timed events are hidden first (earliest first), all-day events are never hidden
+// for being past, then events are trimmed from the end. Order is kept.
+// Returns {shown, hidden}; "+N more" should show `hidden`.
+export function pickVisible(events, capacity, pastFn) {
+  const n = events.length;
+  const cap = Math.max(0, capacity);
+  if (n <= cap) return { shown: events, hidden: 0 };
+  let toHide = n - cap;
+  const hide = new Set();
+  for (const ev of events) {
+    if (toHide === 0) break;
+    if (!ev.all_day && pastFn(ev)) {
+      hide.add(ev);
+      toHide -= 1;
+    }
+  }
+  for (let i = n - 1; i >= 0 && toHide > 0; i--) {
+    if (!hide.has(events[i])) {
+      hide.add(events[i]);
+      toHide -= 1;
+    }
+  }
+  return { shown: events.filter((ev) => !hide.has(ev)), hidden: hide.size };
 }
 
 export function monthGrid(todayISO) {
