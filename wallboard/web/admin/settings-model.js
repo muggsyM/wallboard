@@ -1,4 +1,4 @@
-// Pure helpers for the settings page: config edits, drag-reorder maths and error lookup.
+// Pure helpers for the settings page: config edits, list moves and error lookup.
 // No DOM access, so node tests can import this module directly.
 
 export const MAX_QUICK_TILES = 4;
@@ -14,12 +14,15 @@ export function moveItem(arr, from, to) {
   return out;
 }
 
-// Final index of a dragged row: `mids` are the vertical midpoints of the *other* rows in
-// order; the row goes before the first one whose midpoint is below the pointer.
-export function dropIndex(y, mids) {
-  let i = 0;
-  while (i < mids.length && y > mids[i]) i++;
-  return i;
+// Translated text for a 422/403 entry: admin_err_<type> with the error's ctx placeholders,
+// falling back to the server's English msg for types without a translation. `tr` is i18n's t().
+export function errorText(err, tr) {
+  if (err.type) {
+    const key = `admin_err_${err.type}`;
+    const text = tr(key, err.ctx || {});
+    if (text !== key) return text;
+  }
+  return err.msg;
 }
 
 export const locKey = (loc) => (loc || []).join(".");

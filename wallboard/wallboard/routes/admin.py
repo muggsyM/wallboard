@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, quote, urlsplit
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError
 from starlette.concurrency import run_in_threadpool
 
 from .. import auth, google_oauth
@@ -120,8 +120,13 @@ def _admin_view(app) -> dict[str, Any]:
     }
 
 
-def _error(loc: list, msg: str, type_: str = "value_error") -> dict[str, Any]:
-    return {"loc": loc, "msg": msg, "type": type_}
+def _error(loc: list, msg: str, type_: str, ctx: dict[str, Any] | None = None) -> dict[str, Any]:
+    """One 422 entry. `type` is stable (the page maps it to a translated text); `ctx` holds
+    the text's placeholders. Neither ever carries the submitted value."""
+    err: dict[str, Any] = {"loc": loc, "msg": msg, "type": type_}
+    if ctx:
+        err["ctx"] = ctx
+    return err
 
 
 def _invalid(errors: list[dict[str, Any]]) -> JSONResponse:
@@ -130,10 +135,12 @@ def _invalid(errors: list[dict[str, Any]]) -> JSONResponse:
 
 
 def _pydantic_errors(exc: ValidationError) -> list[dict[str, Any]]:
-    return [
-        _error(list(e["loc"]), e["msg"], e["type"])
-        for e in exc.errors(include_url=False, include_input=False, include_context=False)
-    ]
+    errors = []
+    for e in exc.errors(include_url=False, include_input=False):
+        # Keep only plain placeholder values ({"ge": 5}); drop exception objects and the like.
+        ctx = {k: v for k, v in (e.get("ctx") or {}).items() if isinstance(v, (str, int, float)) and k != "input"}
+        errors.append(_error(list(e["loc"]), e["msg"], e["type"], ctx or None))
+    return errors
 
 
 M = TypeVar("M", bound=BaseModel)
@@ -179,7 +186,7 @@ def _reconcile(old: Config, new: Config) -> tuple[Config, list[dict[str, Any]]]:
     seen: set[str] = set()
     for i, m in enumerate(new.members):
         if m.id in seen:
-            errors.append(_error(["members", i, "id"], "duplicate member id"))
+            errors.append(_error(["members", i, "id"], "duplicate member id", "duplicate_member_id"))
         seen.add(m.id)
     old_names = {m.id: m.name for m in old.members}
     deleted = set(old_names) - seen
@@ -191,17 +198,18 @@ def _reconcile(old: Config, new: Config) -> tuple[Config, list[dict[str, Any]]]:
                     ["members"],
                     f"{name} has the Google account {acct.email} connected; disconnect it before removing {name}",
                     "member_has_google_account",
+                    {"name": name, "email": acct.email},
                 )
             )
     accounts = {a.id for a in new.google_accounts}
     calendars = []
     for i, cal in enumerate(new.calendars):
         if cal.account_id not in accounts:
-            errors.append(_error(["calendars", i, "account_id"], "unknown Google account"))
+            errors.append(_error(["calendars", i, "account_id"], "unknown Google account", "unknown_account"))
         elif cal.member_id in seen:
             calendars.append(cal)
         elif cal.member_id not in deleted:
-            errors.append(_error(["calendars", i, "member_id"], "unknown member"))
+            errors.append(_error(["calendars", i, "member_id"], "unknown member", "unknown_member"))
     return new.model_copy(update={"calendars": calendars}), errors
 
 
@@ -220,8 +228,10 @@ async def put_config(request: Request) -> Any:
         return payload
     app = request.app
     store = app.state.store
-    old = store.config  # no await from here until save_config
+    old = store.config  # no await from here until save_config / save_secrets
+    # Server-owned fields: the Google routes own the accounts, the photos page owns shuffle.
     payload["google_accounts"] = [a.model_dump() for a in old.google_accounts]
+    payload["photos_shuffle"] = old.photos_shuffle
     try:
         new = Config.model_validate(payload)
     except ValidationError as e:
@@ -229,6 +239,13 @@ async def put_config(request: Request) -> Any:
     new, errors = _reconcile(old, new)
     if errors:
         return _invalid(errors)
+    if not _same_origin(old.ha_url, new.ha_url):
+        # Ruling R21: the stored token was entered for the old server; never send it to a
+        # new one (a stolen cookie could otherwise point ha_url at its own host). The page
+        # saves config before secrets, so a token typed together with the new URL survives.
+        secrets = store.secrets
+        if secrets.ha_token:
+            store.save_secrets(secrets.model_copy(update={"ha_token": None}))
     store.save_config(new)
     await app.state.hub.publish({"type": "config", "config": store.public_config()})
     if _ha_inputs(old) != _ha_inputs(new):
@@ -236,6 +253,23 @@ async def put_config(request: Request) -> Any:
     if _calendar_inputs(old) != _calendar_inputs(new):
         app.state.gcal.refresh_now()  # language also changes holiday names
     return _admin_view(app)
+
+
+class ShuffleBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    shuffle: StrictBool
+
+
+@router.put("/api/admin/photos/shuffle", dependencies=[Depends(auth.require_admin)])
+async def put_photos_shuffle(request: Request) -> Any:
+    """The photos page's shuffle switch; `photos_shuffle` is not written by PUT /config."""
+    body = await _parse(request, ShuffleBody)
+    if isinstance(body, JSONResponse):
+        return body
+    store = request.app.state.store
+    store.save_config(store.config.model_copy(update={"photos_shuffle": body.shuffle}))
+    await request.app.state.hub.publish({"type": "config", "config": store.public_config()})
+    return {"shuffle": store.config.photos_shuffle}
 
 
 class SecretsBody(BaseModel):
@@ -260,9 +294,15 @@ async def put_secrets(request: Request) -> Any:
     if body.admin_password:
         errors = []
         if len(body.admin_password) < MIN_PASSWORD:
-            errors.append(_error(["admin_password"], f"at least {MIN_PASSWORD} characters"))
+            errors.append(
+                _error(
+                    ["admin_password"], f"at least {MIN_PASSWORD} characters", "password_too_short", {"min": MIN_PASSWORD}
+                )
+            )
         if not body.current_password:
-            errors.append(_error(["current_password"], "required to change the password"))
+            errors.append(
+                _error(["current_password"], "required to change the password", "current_password_required")
+            )
         if errors:
             return _invalid(errors)
         # The current password stops a stolen cookie from taking the account over;
@@ -278,7 +318,9 @@ async def put_secrets(request: Request) -> Any:
             )
         ok = await run_in_threadpool(auth.verify_password, body.current_password, store.secrets.admin_password_hash)
         if not ok:
-            return JSONResponse({"detail": [_error(["current_password"], "wrong password")]}, status_code=403)
+            return JSONResponse(
+                {"detail": [_error(["current_password"], "wrong password", "wrong_password")]}, status_code=403
+            )
         limiter.success(ip)
         new_hash = await run_in_threadpool(auth.hash_password, body.admin_password)
 
@@ -314,11 +356,29 @@ class HATestBody(BaseModel):
 _BAD_HA_URL = "URL must start with http:// or https://"
 
 
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _origin(url: str | None) -> tuple | None:
+    """(scheme, host, port) of an http(s) URL; None for no URL. Unparseable URLs are their own origin."""
+    if not url:
+        return None
+    parts = urlsplit(url.strip())
+    try:
+        port = parts.port or _DEFAULT_PORTS.get(parts.scheme)
+    except ValueError:
+        return ("invalid", url.strip())
+    return (parts.scheme.lower(), (parts.hostname or "").lower(), port)
+
+
+def _same_origin(a: str | None, b: str | None) -> bool:
+    return _origin(a) == _origin(b)
+
+
 def _same_url(a: str, b: str | None) -> bool:
-    if not b:
+    if not b or not _same_origin(a, b):
         return False
-    pa, pb = urlsplit(a.strip()), urlsplit(b.strip())
-    return (pa.scheme, pa.netloc.lower(), pa.path.rstrip("/")) == (pb.scheme, pb.netloc.lower(), pb.path.rstrip("/"))
+    return urlsplit(a.strip()).path.rstrip("/") == urlsplit(b.strip()).path.rstrip("/")
 
 
 @router.post("/api/admin/ha/test", dependencies=[Depends(auth.require_admin)])
@@ -401,7 +461,10 @@ async def _connect(request: Request, code: str, state: str) -> None:
     except google_oauth.GoogleError as e:
         raise HTTPException(status_code=502, detail=str(e)) from None
     account_id = google_oauth.account_id_for(email)
-    # Re-read right before writing; nothing is held across the HTTP call above.
+    # Re-read right before writing; nothing is held across the HTTP call above. The member
+    # may have been deleted while the exchange ran: then keep nothing (no orphan account).
+    if member_id not in {m.id for m in store.config.members}:
+        raise HTTPException(status_code=409, detail="The family member was removed during sign-in; nothing was saved")
     store.save_secrets(
         store.secrets.model_copy(
             update={"google_refresh_tokens": {**store.secrets.google_refresh_tokens, account_id: refresh}}

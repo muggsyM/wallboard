@@ -444,3 +444,162 @@ def test_static_modules_for_admin_on_lan(app):
     forged = client(app, admin=False)
     forged.cookies.set(auth.COOKIE_NAME, "9999999999.deadbeef")
     assert forged.get("/static/shared/i18n.js").status_code == 403
+
+
+# ---- fix round 1 --------------------------------------------------------------------------
+
+
+def with_ha(app, url="http://ha.local:8123", token="tok-OLD"):
+    store = app.state.store
+    store.save_config(store.config.model_copy(update={"ha_url": url}))
+    store.save_secrets(store.secrets.model_copy(update={"ha_token": token}))
+
+
+@pytest.mark.parametrize(
+    "new_url",
+    ["http://evil.example:8123", "https://ha.local:8123", "http://ha.local:9999", "http://ha2.local:8123", None],
+)
+def test_ha_url_origin_change_clears_token(app, new_url):
+    with_ha(app)
+    r = client(app).put("/api/admin/config", json=full_config(app, ha_url=new_url))
+    assert r.status_code == 200, r.text
+    assert app.state.store.secrets.ha_token is None
+    assert r.json()["secrets_set"]["ha_token"] is False
+
+
+@pytest.mark.parametrize(
+    "new_url", ["http://ha.local:8123/", "http://ha.local:8123/sub", "http://HA.local:8123", "http://ha.local:8123"]
+)
+def test_ha_url_same_origin_keeps_token(app, new_url):
+    with_ha(app)
+    assert client(app).put("/api/admin/config", json=full_config(app, ha_url=new_url)).status_code == 200
+    assert app.state.store.secrets.ha_token == "tok-OLD"
+
+
+def test_ha_url_default_port_is_same_origin(app):
+    with_ha(app, url="http://ha.local")
+    assert client(app).put("/api/admin/config", json=full_config(app, ha_url="http://ha.local:80")).status_code == 200
+    assert app.state.store.secrets.ha_token == "tok-OLD"
+
+
+def test_ha_url_first_set_clears_unbound_token(app):
+    with_ha(app, url=None)
+    client(app).put("/api/admin/config", json=full_config(app, ha_url="http://ha.local:8123"))
+    assert app.state.store.secrets.ha_token is None
+
+
+def test_url_and_new_token_in_one_save(app):
+    """The page saves config first, then secrets, so a token typed with a new URL survives."""
+    with_ha(app)
+    c = client(app)
+    assert c.put("/api/admin/config", json=full_config(app, ha_url="http://new.local:8123")).status_code == 200
+    assert c.put("/api/admin/secrets", json={"ha_token": "tok-NEW"}).status_code == 200
+    assert app.state.store.secrets.ha_token == "tok-NEW"
+    assert app.state.store.config.ha_url == "http://new.local:8123"
+
+
+async def _redirect_server(target_port):
+    async def handle(reader, writer):
+        await reader.readuntil(b"\r\n\r\n")
+        writer.write(
+            f"HTTP/1.1 302 Found\r\nLocation: ws://127.0.0.1:{target_port}/api/websocket\r\n"
+            "Content-Length: 0\r\nConnection: close\r\n\r\n".encode()
+        )
+        await writer.drain()
+        writer.close()
+
+    server = await asyncio.start_server(handle, "127.0.0.1", 0)
+    return server, server.sockets[0].getsockname()[1]
+
+
+async def test_probe_does_not_follow_redirects(mock):
+    from wallboard import ha_client
+
+    server, port = await _redirect_server(mock.port)
+    try:
+        result = await ha_client.probe_connection(f"http://127.0.0.1:{port}", "dev-token", timeout=2.0)
+    finally:
+        server.close()
+    assert result["ok"] is False and result["error"]
+    assert mock.auth_attempts == 0  # the token never reached the redirect target
+
+
+async def test_client_does_not_follow_redirects(app, mock):
+    server, port = await _redirect_server(mock.port)
+    store = app.state.store
+    store.save_config(store.config.model_copy(update={"ha_url": f"http://127.0.0.1:{port}"}))
+    store.save_secrets(store.secrets.model_copy(update={"ha_token": "dev-token"}))
+    ha = HAClient(store, app.state.hub, backoff_base=0.05, backoff_max=0.1, connect_timeout=1.0)
+    await ha.start()
+    try:
+        await asyncio.sleep(0.5)
+        assert not ha.connected
+        assert mock.auth_attempts == 0
+    finally:
+        await ha.stop()
+        server.close()
+
+
+def test_secrets_invalid_value_not_echoed(app):
+    c = client(app)
+    big = "SECRETVALUE" * 500  # > 4096 chars
+    r = c.put("/api/admin/secrets", json={"ha_token": big})
+    assert r.status_code == 422
+    assert "SECRETVALUE" not in r.text
+    assert r.json()["detail"][0]["loc"] == ["ha_token"] and r.json()["detail"][0]["type"] == "string_too_long"
+    r = c.put("/api/admin/secrets", json={"ha_token": 12345678})
+    assert r.status_code == 422 and "12345678" not in r.text
+    r = c.put("/api/admin/secrets", json={"nope": "SECRET-x"})
+    assert r.status_code == 422 and "SECRET-x" not in r.text
+    assert app.state.store.secrets.ha_token is None
+
+
+def test_error_types_are_stable(app):
+    with_family(app)
+    c = client(app)
+    data = full_config(app)
+    data["members"] = [m for m in data["members"] if m["id"] != "anna"]
+    err = c.put("/api/admin/config", json=data).json()["detail"][0]
+    assert err["type"] == "member_has_google_account"
+    assert err["ctx"] == {"name": "Anna", "email": "anna@gmail.com"}
+
+    def types(r):
+        return [e["type"] for e in r.json()["detail"]]
+
+    assert types(c.put("/api/admin/config", json=full_config(app, timezone="Mars/Base"))) == ["unknown_timezone"]
+    assert types(c.put("/api/admin/config", json=full_config(app, quick_tiles=["x.y"]))) == ["quick_tile_not_in_tiles"]
+    tiles = [{"entity_id": f"light.l{i}", "group": "lights"} for i in range(5)]
+    r = c.put("/api/admin/config", json=full_config(app, tiles=tiles, quick_tiles=[t["entity_id"] for t in tiles]))
+    assert types(r) == ["too_many_quick_tiles"]
+    r = c.put("/api/admin/config", json=full_config(app, rotation_seconds=1))
+    assert types(r) == ["greater_than_equal"] and r.json()["detail"][0]["ctx"] == {"ge": 5}
+    members = full_config(app)["members"]
+    members = members + [members[1]]
+    assert types(c.put("/api/admin/config", json=full_config(app, members=members))) == ["duplicate_member_id"]
+    cals = [{"account_id": "g_nope", "calendar_id": "x", "name": "X", "member_id": "anna"}]
+    assert types(c.put("/api/admin/config", json=full_config(app, calendars=cals))) == ["unknown_account"]
+    cals = [{"account_id": "g_a", "calendar_id": "x", "name": "X", "member_id": "ghost"}]
+    assert types(c.put("/api/admin/config", json=full_config(app, calendars=cals))) == ["unknown_member"]
+    r = c.put("/api/admin/secrets", json={"admin_password": "short"})
+    assert sorted(types(r)) == ["current_password_required", "password_too_short"]
+    r = c.put("/api/admin/secrets", json={"admin_password": "long-enough-1", "current_password": "bad"})
+    assert r.status_code == 403 and types(r) == ["wrong_password"]
+
+
+def test_photos_shuffle_is_server_owned(app):
+    c = client(app)
+    assert c.put("/api/admin/config", json=full_config(app, photos_shuffle=True)).status_code == 200
+    assert app.state.store.config.photos_shuffle is False
+    sock = FakeSocket()
+    asyncio.run(app.state.hub.connect(sock))
+    sock.messages.clear()
+    r = c.put("/api/admin/photos/shuffle", json={"shuffle": True})
+    assert r.status_code == 200 and r.json() == {"shuffle": True}
+    assert app.state.store.config.photos_shuffle is True
+    assert [m["config"]["photos_shuffle"] for m in sock.messages if m["type"] == "config"] == [True]
+    # a later full-config save from the settings page does not undo it
+    assert c.put("/api/admin/config", json=full_config(app, photos_shuffle=False)).status_code == 200
+    assert app.state.store.config.photos_shuffle is True
+    assert c.put("/api/admin/photos/shuffle", json={"shuffle": "yes"}).status_code == 422
+    assert client(app, csrf=False).put("/api/admin/photos/shuffle", json={"shuffle": False}).status_code == 403
+    assert client(app, admin=False).put("/api/admin/photos/shuffle", json={"shuffle": False}).status_code == 401

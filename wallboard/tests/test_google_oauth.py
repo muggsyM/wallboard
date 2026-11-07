@@ -201,6 +201,31 @@ def test_reconnect_updates_member_and_token(app):
 
 
 @respx.mock
+def test_member_removed_during_exchange_discards_token(app):
+    store = app.state.store
+    store.save_config(
+        store.config.model_copy(
+            update={"members": store.config.members + [Member(id="bob", name="B", initial="B", color="#000")]}
+        )
+    )
+    ac = admin_client(app)
+    state = start_state(ac, "bob")
+
+    def exchange(request):  # the member is deleted while the code exchange is in flight
+        store.save_config(store.config.model_copy(update={"members": [m for m in store.config.members if m.id != "bob"]}))
+        return httpx.Response(200, json=token_json())
+
+    respx.post(TOKEN_URL).mock(side_effect=exchange)
+    url = f"http://localhost:8080/api/google/callback?state={state}&code={CODE}"
+    r = ac.post("/api/admin/google/paste", json={"url": url})
+    assert r.status_code == 409
+    assert "removed" in r.json()["detail"]
+    assert REFRESH not in r.text
+    assert store.secrets.google_refresh_tokens == {}
+    assert store.config.google_accounts == []
+
+
+@respx.mock
 def test_paste_url_flow(app):
     respx.post(TOKEN_URL).mock(return_value=httpx.Response(200, json=token_json()))
     ac = admin_client(app)

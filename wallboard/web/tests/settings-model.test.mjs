@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as M from "../admin/settings-model.js";
+import { dropIndex } from "../admin/reorder.js";
+import { readFileSync } from "node:fs";
+import { setStrings, setLanguage, t } from "../shared/i18n.js";
 
 const cfg = () => ({
   ha_url: "",
@@ -22,10 +25,10 @@ test("moveItem and dropIndex", () => {
   assert.deepEqual(M.moveItem(["a", "b", "c", "d"], 0, 2), ["b", "c", "a", "d"]);
   assert.deepEqual(M.moveItem(["a", "b", "c", "d"], 3, 0), ["d", "a", "b", "c"]);
   assert.deepEqual(M.moveItem(["a", "b"], 0, 9), ["b", "a"]);
-  assert.equal(M.dropIndex(5, [10, 30, 50]), 0);
-  assert.equal(M.dropIndex(31, [10, 30, 50]), 2);
-  assert.equal(M.dropIndex(99, [10, 30, 50]), 3);
-  assert.equal(M.dropIndex(5, []), 0);
+  assert.equal(dropIndex(5, [10, 30, 50]), 0);
+  assert.equal(dropIndex(31, [10, 30, 50]), 2);
+  assert.equal(dropIndex(99, [10, 30, 50]), 3);
+  assert.equal(dropIndex(5, []), 0);
 });
 
 test("errorTarget falls back to the nearest field", () => {
@@ -98,4 +101,16 @@ test("cleanConfig turns blank optional fields into null and drops empty list ent
 test("isLocalHost", () => {
   assert.ok(M.isLocalHost("localhost") && M.isLocalHost("127.0.0.1"));
   assert.ok(!M.isLocalHost("192.168.1.10") && !M.isLocalHost("wallboard.local"));
+});
+
+test("errorText maps stable types to translations and falls back to msg", () => {
+  setStrings("cs", JSON.parse(readFileSync(new URL("../shared/i18n/cs.json", import.meta.url), "utf8")));
+  setLanguage("cs");
+  assert.equal(M.errorText({ type: "greater_than_equal", ctx: { ge: 5 }, msg: "Input should be..." }, t), "Nejméně 5");
+  assert.equal(
+    M.errorText({ type: "member_has_google_account", ctx: { name: "Anna", email: "a@x.cz" }, msg: "x" }, t),
+    "Anna má připojený Google účet a@x.cz – nejdřív ho odpojte",
+  );
+  assert.equal(M.errorText({ type: "some_new_type", msg: "server text" }, t), "server text");
+  assert.equal(M.errorText({ msg: "no type" }, t), "no type");
 });

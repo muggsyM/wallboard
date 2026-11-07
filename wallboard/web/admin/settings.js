@@ -8,10 +8,11 @@
 import { PAGES, getPage } from "/static/display/pages/registry.js";
 import { t, setLanguage, loadLanguage } from "/static/shared/i18n.js";
 import * as M from "/static/admin/settings-model.js";
+import { h, field, textInput, numberInput, checkbox, select, button, badge, setEditHandler } from "/static/admin/dom.js";
+import { makeReorderable } from "/static/admin/reorder.js";
 
 const CSRF = { "X-Requested-With": "wallboard" };
 const MEMBER_COLORS = ["#4f8cff", "#ff6b9d", "#ffb547", "#4cd4a0", "#b18cff", "#ff7a59"];
-const LONG_PRESS_MS = 350;
 const SECRET_FIELDS = ["ha_token", "google_client_id", "google_client_secret"];
 
 const S = {
@@ -26,28 +27,6 @@ const S = {
   dirty: false,
 };
 
-// ---- DOM helpers ----------------------------------------------------------------------------
-
-const PROPS = new Set(["value", "checked", "disabled", "hidden", "selected", "type", "min", "max", "maxLength", "placeholder"]);
-
-function h(tag, props = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(props || {})) {
-    if (v === undefined || v === null || v === false) continue;
-    if (k === "class") el.className = v;
-    else if (k === "text") el.textContent = v;
-    else if (k === "dataset") Object.assign(el.dataset, v);
-    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
-    else if (PROPS.has(k)) el[k] = v;
-    else el.setAttribute(k, v === true ? "" : String(v));
-  }
-  for (const c of children.flat()) {
-    if (c === null || c === undefined || c === false) continue;
-    el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  }
-  return el;
-}
-
 const $ = (sel) => document.querySelector(sel);
 
 function markDirty() {
@@ -56,83 +35,12 @@ function markDirty() {
   setStatus(t("admin_unsaved"));
 }
 
+setEditHandler(markDirty);
+
 function setStatus(text, kind = "") {
   const el = $("#save-status");
   el.textContent = text || "";
   el.className = `save-status ${kind}`;
-}
-
-// A labelled field. `loc` is the config path the server uses in 422 errors ("members.0.color").
-function field(label, control, { loc, hint, inline } = {}) {
-  return h(
-    "label",
-    { class: inline ? "field inline" : "field", dataset: loc ? { loc } : undefined },
-    inline ? [control, h("span", { text: label })] : [h("span", { text: label }), control],
-    hint ? h("small", { class: "hint", text: hint }) : null,
-  );
-}
-
-// Inputs bound to obj[key]. `nullable` stores null for an empty value.
-function textInput(obj, key, opts = {}) {
-  return h("input", {
-    type: opts.type || "text",
-    value: obj[key] ?? "",
-    placeholder: opts.placeholder,
-    list: opts.list,
-    maxLength: opts.maxLength,
-    autocomplete: "off",
-    autocapitalize: opts.list ? "none" : undefined,
-    spellcheck: opts.list ? "false" : undefined,
-    oninput: (e) => {
-      obj[key] = opts.nullable && e.target.value === "" ? null : e.target.value;
-      markDirty();
-    },
-    onchange: opts.onchange,
-  });
-}
-
-function numberInput(obj, key, { min, placeholder, nullable } = {}) {
-  return h("input", {
-    type: "number",
-    inputmode: "numeric",
-    min,
-    placeholder,
-    value: obj[key] ?? "",
-    oninput: (e) => {
-      const v = e.target.value;
-      if (v === "") {
-        if (nullable) obj[key] = null;
-      } else obj[key] = Number(v);
-      markDirty();
-    },
-  });
-}
-
-function checkbox(obj, key, { disabled, onchange } = {}) {
-  return h("input", {
-    type: "checkbox",
-    checked: !!obj[key],
-    disabled,
-    onchange: (e) => {
-      obj[key] = e.target.checked;
-      markDirty();
-      onchange?.(e);
-    },
-  });
-}
-
-function select(obj, key, options, onchange) {
-  return h(
-    "select",
-    {
-      onchange: (e) => {
-        obj[key] = e.target.value;
-        markDirty();
-        onchange?.(e);
-      },
-    },
-    options.map(([value, label]) => h("option", { value, selected: obj[key] === value, text: label })),
-  );
 }
 
 // Write-only secret: a password input bound to the draft, never filled from the server.
@@ -148,12 +56,7 @@ function secretInput(key, autocomplete = "off") {
   });
 }
 
-const badge = (text, kind = "") => h("span", { class: `badge ${kind}`, text });
 const setBadge = (isSet) => badge(isSet ? t("admin_set") : t("admin_not_set"), isSet ? "ok" : "");
-
-function button(label, onclick, cls = "secondary", extra = {}) {
-  return h("button", { type: "button", class: cls, onclick, ...extra }, label);
-}
 
 function section(id, titleKey, ...children) {
   return h("section", { id, class: "panel" }, h("h2", { text: t(titleKey) }), ...children);
@@ -319,6 +222,13 @@ function renderGoogle() {
     );
   });
 
+  // Safety net: an account whose member is gone can still be disconnected.
+  const memberIds = new Set(c.members.map((m) => m.id));
+  const orphanAccounts = c.google_accounts.filter((a) => !memberIds.has(a.member_id));
+  const orphans = orphanAccounts.length
+    ? h("div", { class: "card-row" }, h("h3", { class: "member-title", text: t("admin_orphan_accounts") }), orphanAccounts.map(renderAccount))
+    : null;
+
   const paste = local
     ? null
     : (() => {
@@ -339,7 +249,7 @@ function renderGoogle() {
     field(t("admin_google_client_secret"), secretInput("google_client_secret"), { loc: "google_client_secret", hint: t("admin_secret_hint") }),
     note,
     c.google_accounts.length ? null : h("p", { class: "muted", text: t("admin_no_accounts") }),
-    h("div", { class: "stack" }, members),
+    h("div", { class: "stack" }, members, orphans),
     paste,
   );
 }
@@ -363,7 +273,8 @@ function renderAccount(acct) {
 
   const rows = items.map((calendar) => {
     const ref = M.calendarRef(c, acct.id, calendar.id);
-    let memberId = ref?.member_id || acct.member_id;
+    const known = c.members.some((m) => m.id === acct.member_id);
+    let memberId = ref?.member_id || (known ? acct.member_id : c.members[0]?.id);
     const box = h("input", {
       type: "checkbox",
       checked: !!ref,
@@ -543,8 +454,14 @@ function renderHA() {
     "ha",
     "admin_ha",
     h("div", { class: "row" }, connected ? badge(t("admin_ha_connected"), "ok") : badge(t("admin_ha_disconnected"), "error")),
-    field(t("admin_ha_url"), textInput(c, "ha_url", { type: "url", nullable: true, placeholder: "http://homeassistant.local:8123" }), { loc: "ha_url" }),
-    field(t("admin_ha_token"), h("div", { class: "row" }, secretInput("ha_token"), setBadge(S.view.secrets_set.ha_token)), { loc: "ha_token", hint: t("admin_secret_hint") }),
+    field(t("admin_ha_url"), textInput(c, "ha_url", { type: "url", nullable: true, placeholder: "http://homeassistant.local:8123" }), {
+      loc: "ha_url",
+      hint: t("admin_ha_url_hint"),
+    }),
+    field(t("admin_ha_token"), h("div", { class: "row" }, secretInput("ha_token"), setBadge(S.view.secrets_set.ha_token)), {
+      loc: "ha_token",
+      hint: !S.view.secrets_set.ha_token && S.view.config.ha_url ? t("admin_ha_token_reenter") : t("admin_secret_hint"),
+    }),
     h("div", { class: "row" }, button(t("admin_ha_test"), testHA, "secondary", { id: "ha-test" })),
     testLine,
     S.entities ? null : h("p", { class: "hint", text: t("admin_ha_no_entities") }),
@@ -664,62 +581,6 @@ function pageSetting(page, s, i) {
   return field(label, h("input", { type: "text", value: current ?? "", oninput: (e) => store(e.target.value === "" ? undefined : e.target.value) }), { loc });
 }
 
-// Drag rows by their .drag header with pointer events. Mouse/pen drag at once; touch needs a
-// long press first so normal scrolling keeps working. The row moves live; onMove(from, to)
-// runs on release.
-function makeReorderable(list, onMove) {
-  let drag = null; // {row, from, pointerId, timer, startY, active}
-
-  const rows = () => [...list.children];
-  const start = () => {
-    drag.active = true;
-    drag.row.classList.add("dragging");
-    navigator.vibrate?.(15);
-  };
-  const end = (commit) => {
-    if (!drag) return;
-    clearTimeout(drag.timer);
-    const { row, from, active } = drag;
-    drag = null;
-    row.classList.remove("dragging");
-    if (active && commit) onMove(from, rows().indexOf(row));
-  };
-
-  list.addEventListener("pointerdown", (e) => {
-    const handle = e.target.closest(".drag");
-    if (!handle || drag || (e.pointerType === "mouse" && e.button !== 0)) return;
-    const row = handle.closest(".page-row");
-    drag = { row, from: rows().indexOf(row), pointerId: e.pointerId, startY: e.clientY, startX: e.clientX, active: false, timer: null };
-    list.setPointerCapture(e.pointerId); // the list, not the row: rows move in the DOM
-    if (e.pointerType === "touch") drag.timer = setTimeout(start, LONG_PRESS_MS);
-    else {
-      e.preventDefault();
-      start();
-    }
-  });
-  list.addEventListener("pointermove", (e) => {
-    if (!drag || e.pointerId !== drag.pointerId) return;
-    if (!drag.active) {
-      if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) > 10) end(false); // a scroll, not a press
-      return;
-    }
-    e.preventDefault();
-    const others = rows().filter((r) => r !== drag.row);
-    const mids = others.map((r) => {
-      const b = r.getBoundingClientRect();
-      return b.top + b.height / 2;
-    });
-    const idx = M.dropIndex(e.clientY, mids);
-    if (idx >= others.length) list.append(drag.row);
-    else if (others[idx] !== drag.row.nextElementSibling) list.insertBefore(drag.row, others[idx]);
-  });
-  list.addEventListener("pointerup", (e) => drag && e.pointerId === drag.pointerId && end(true));
-  list.addEventListener("pointercancel", (e) => drag && e.pointerId === drag.pointerId && end(true));
-  // While dragging, stop the page from scrolling under the finger.
-  list.addEventListener("touchmove", (e) => drag?.active && e.cancelable && e.preventDefault(), { passive: false });
-  list.addEventListener("contextmenu", (e) => e.target.closest(".drag") && e.preventDefault());
-}
-
 function renderPassword() {
   return section(
     "password",
@@ -778,24 +639,35 @@ function clearErrors() {
   document.querySelectorAll(".has-error").forEach((el) => el.classList.remove("has-error"));
 }
 
+const errorText = (err) => M.errorText(err, t);
+
 function showErrors(errors) {
   let first = null;
   const global = [];
   for (const err of errors) {
     const key = M.errorTarget(err.loc, (k) => !!document.querySelector(`[data-loc="${CSS.escape(k)}"]`));
     if (!key) {
-      global.push(err.msg);
+      global.push(errorText(err));
       continue;
     }
     const el = document.querySelector(`[data-loc="${CSS.escape(key)}"]`);
     el.classList.add("has-error");
-    el.append(h("p", { class: "field-error", role: "alert", text: err.msg }));
+    el.append(h("p", { class: "field-error", role: "alert", text: errorText(err) }));
     first ||= el;
   }
   first?.scrollIntoView({ behavior: "smooth", block: "center" });
   setStatus(global.length ? global.join(" · ") : t("admin_save_failed"), "error");
 }
 
+function saveFailed(e) {
+  $("#save").disabled = false;
+  if (e.errors) showErrors(e.errors);
+  else setStatus(t("admin_error", { msg: e.message }), "error");
+}
+
+// Config first, then secrets: a config that moves ha_url to another server clears the stored
+// token on the server (ruling R21), so a token typed together with the new address has to be
+// saved after the config.
 async function save() {
   clearErrors();
   const d = S.draft;
@@ -803,7 +675,7 @@ async function save() {
   for (const k of SECRET_FIELDS) if (d[k].trim()) secrets[k] = d[k].trim();
   if (d.admin_password || d.admin_password2) {
     if (d.admin_password !== d.admin_password2) {
-      showErrors([{ loc: ["admin_password2"], msg: t("admin_password_mismatch") }]);
+      showErrors([{ loc: ["admin_password2"], type: "password_mismatch", msg: t("admin_password_mismatch") }]);
       return;
     }
     secrets.admin_password = d.admin_password;
@@ -812,27 +684,33 @@ async function save() {
   $("#save").disabled = true;
   setStatus(t("admin_saving"));
   const oldLang = S.view.config.language;
-  let passwordChanged = false;
   try {
-    if (Object.keys(secrets).length) {
-      const r = await api("PUT", "/api/admin/secrets", secrets);
-      S.view.secrets_set = r.secrets_set;
-      passwordChanged = !!secrets.admin_password;
-      for (const k of Object.keys(d)) d[k] = "";
-    }
     const view = await api("PUT", "/api/admin/config", M.cleanConfig(S.config));
     S.view = view;
     S.config = structuredClone(view.config);
     S.dirty = false;
     if (view.config.language !== oldLang) await useLanguage(view.config.language);
-    renderAll();
-    setStatus(passwordChanged ? t("admin_password_changed") : t("admin_saved"), "ok");
-    loadEntities(4); // HA may have restarted with a new URL/token
+    renderAll(); // typed secrets live in S.draft, so they survive this re-render
   } catch (e) {
-    $("#save").disabled = false;
-    if (e.errors) showErrors(e.errors);
-    else setStatus(t("admin_error", { msg: e.message }), "error");
+    saveFailed(e);
+    return;
   }
+  let passwordChanged = false;
+  if (Object.keys(secrets).length) {
+    try {
+      const r = await api("PUT", "/api/admin/secrets", secrets);
+      S.view.secrets_set = r.secrets_set;
+      passwordChanged = !!secrets.admin_password;
+      for (const k of Object.keys(d)) d[k] = "";
+      for (const id of ["google", "ha", "password"]) rerender(id); // clear inputs, update badges
+    } catch (e) {
+      S.dirty = true; // the config is saved; the secrets are still typed in and can be retried
+      saveFailed(e);
+      return;
+    }
+  }
+  setStatus(passwordChanged ? t("admin_password_changed") : t("admin_saved"), "ok");
+  loadEntities(4); // HA may have restarted with a new URL/token
 }
 
 async function useLanguage(lang) {

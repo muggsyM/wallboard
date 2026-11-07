@@ -14,6 +14,7 @@ from urllib.parse import urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
 import websockets
+import websockets.asyncio.client
 
 from .config import Config, ConfigStore
 from .hub import Hub
@@ -73,6 +74,17 @@ def forecast_date(value: object, tz: ZoneInfo) -> str:
     return dt.date().isoformat()
 
 
+class _connect_no_redirect(websockets.asyncio.client.connect):
+    """websockets.connect that never follows an HTTP redirect.
+
+    The access token is sent after the handshake, so following a (possibly cross-origin)
+    redirect would hand it to whatever host the redirect names.
+    """
+
+    def process_redirect(self, exc: Exception) -> Exception:
+        return exc
+
+
 def wanted_entities_for(cfg: Config) -> set[str]:
     """Every entity the display needs from HA for this config."""
     wanted: set[str] = set()
@@ -101,7 +113,7 @@ async def probe_connection(url: str, token: str, timeout: float = 5.0) -> dict[s
 
     async def handshake() -> None:
         nonlocal version
-        async with websockets.connect(ws_url, open_timeout=timeout, close_timeout=1.0, logger=_ws_log) as ws:
+        async with _connect_no_redirect(ws_url, open_timeout=timeout, close_timeout=1.0, logger=_ws_log) as ws:
             first = json.loads(await ws.recv())
             if first.get("type") != "auth_required":
                 raise HAError("not a Home Assistant WebSocket API")
@@ -204,7 +216,7 @@ class HAClient:
         """One connection. Resets the backoff as soon as authentication succeeds, so an
         abnormal drop later in the session (which raises) still retries quickly."""
         try:
-            async with websockets.connect(
+            async with _connect_no_redirect(
                 ws_url, open_timeout=self._connect_timeout, close_timeout=self._close_timeout, max_size=None,
                 logger=_ws_log,
             ) as ws:
