@@ -137,6 +137,7 @@ async def _connect(request: Request, code: str, state: str) -> None:
     store.save_config(cfg.model_copy(update={"google_accounts": accounts}))
     google_oauth.token_cache.invalidate(account_id)
     await app.state.hub.publish({"type": "config", "config": store.public_config()})
+    app.state.gcal.refresh_now()
 
 
 @router.post("/api/admin/google/start", dependencies=[Depends(auth.require_admin)])
@@ -203,4 +204,17 @@ async def google_delete(request: Request, account_id: str) -> dict:
     store.save_secrets(secrets.model_copy(update={"google_refresh_tokens": tokens}))
     google_oauth.token_cache.invalidate(account_id)
     await request.app.state.hub.publish({"type": "config", "config": store.public_config()})
+    request.app.state.gcal.refresh_now()
     return {"ok": True}
+
+
+@router.get("/api/admin/google/{account_id}/calendars", dependencies=[Depends(auth.require_admin)])
+async def google_calendars(request: Request, account_id: str) -> list[dict]:
+    if account_id not in {a.id for a in request.app.state.store.config.google_accounts}:
+        raise HTTPException(status_code=404, detail="unknown account")
+    try:
+        return await request.app.state.gcal.list_calendars(account_id)
+    except google_oauth.GoogleAuthExpired:
+        raise HTTPException(status_code=409, detail="sign-in expired") from None
+    except google_oauth.GoogleError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from None

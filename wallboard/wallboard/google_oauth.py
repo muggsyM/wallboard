@@ -208,7 +208,9 @@ async def access_token(secrets: Secrets, account_id: str, cache: TokenCache | No
     if cached:
         return cached
     refresh = secrets.google_refresh_tokens.get(account_id)
-    if not refresh or not secrets.google_client_id or not secrets.google_client_secret:
+    if not secrets.google_client_id or not secrets.google_client_secret:
+        raise GoogleError("Google client not configured")
+    if not refresh:
         raise GoogleAuthExpired(account_id)
     resp = await _post_token(
         {

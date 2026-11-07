@@ -385,3 +385,17 @@ def test_access_log_redacts_code_and_state(app):
     logging.getLogger("uvicorn.access").filters[-1].filter(rec)
     msg = rec.getMessage()
     assert "SECRETCODE" not in msg and "SECRETSTATE" not in msg and "scope=x" in msg
+
+
+async def test_missing_client_config_is_plain_error_not_expired(app):
+    s = app.state.store.secrets.model_copy(
+        update={"google_refresh_tokens": {"a1": "r"}, "google_client_id": None, "google_client_secret": None}
+    )
+    with pytest.raises(GoogleError, match="Google client not configured") as e:
+        await google_oauth.access_token(s, "a1", google_oauth.TokenCache())
+    assert not isinstance(e.value, GoogleAuthExpired)
+
+
+async def test_missing_refresh_token_is_expired(app):
+    with pytest.raises(GoogleAuthExpired):
+        await google_oauth.access_token(app.state.store.secrets, "nope", google_oauth.TokenCache())
