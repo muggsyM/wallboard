@@ -70,6 +70,10 @@ async def test_service_publishes_dev_calendar(data_dir, tmp_path, caplog):
     cal = hub.snapshot()["calendar"]
     assert (cal["range_start"], cal["range_end"]) == ("2026-10-26", "2026-12-06")
     assert [(e["title"], e["start"]) for e in cal["events"]] == [("Swim", "2026-11-08T10:00:00+01:00")]
+    assert cal["holidays"] == {
+        "2026-10-28": "Den vzniku samostatného československého státu",
+        "2026-11-17": "Den boje za svobodu a demokracii",
+    }
     assert sum("dev calendar" in r.getMessage() for r in caplog.records) == 1
 
 

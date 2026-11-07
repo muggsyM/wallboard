@@ -219,6 +219,135 @@ html, body {
 .wb-more { flex: none; font-size: 2.8cqw; line-height: 1.15; padding-left: 2.6cqw; opacity: .75; }
 .wb-empty { font-size: 3cqw; opacity: .4; padding-top: 1cqw; }
 
+/* ---------- month page ---------- */
+/* Sizes follow mockups/month-v2.html (same cqw units). Event text uses Roboto Condensed
+   (ruling R3) so more of each title fits the narrow portrait columns. */
+.wb-page[data-page="month"] { gap: 2.4cqw; }
+.wb-legend {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: .6cqw 2cqw;
+  padding: 0 1cqw;
+  font-size: 2.5cqw;
+  opacity: .85;
+}
+.wb-legend:empty { display: none; }
+.wb-legend i {
+  display: inline-block;
+  width: 2cqw;
+  height: 2cqw;
+  border-radius: 50%;
+  margin-right: .8cqw;
+  vertical-align: -.2cqw;
+}
+.wb-month {
+  --wb-mgap: .7cqw;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-rows: auto repeat(6, minmax(0, 1fr));
+  gap: var(--wb-mgap);
+}
+.wb-mh {
+  font-size: 2.3cqw;
+  text-transform: uppercase;
+  letter-spacing: .3cqw;
+  opacity: .6;
+  text-align: center;
+  font-weight: 500;
+  padding-bottom: .4cqw;
+}
+.wb-mc {
+  --wb-mpad: .6cqw;
+  background: rgba(255, 255, 255, .06);
+  border-radius: 1.2cqw;
+  padding: .8cqw var(--wb-mpad);
+  display: flex;
+  flex-direction: column;
+  gap: .5cqw;
+  min-height: 0;
+  min-width: 0;
+  /* Clip, but let bar pieces reach half-way into the gap so a bar reads as one. */
+  overflow: clip;
+  overflow-clip-margin: calc(var(--wb-mgap) / 2);
+}
+.wb-mc.out { opacity: .28; }
+.wb-mc.past { opacity: .5; }
+.wb-mc.we { background: rgba(255, 255, 255, .035); }
+.wb-mc.we .wb-mc-n { color: #ffc2cc; }
+.wb-mc.today { background: rgba(79, 140, 255, .24); box-shadow: inset 0 0 0 .45cqw #4f8cff; }
+.wb-mc-n {
+  flex: none;
+  font-size: 2.9cqw;
+  font-weight: 500;
+  line-height: 1.25;
+  padding-left: .3cqw;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.wb-mc.today .wb-mc-n span { background: #4f8cff; border-radius: 1cqw; padding: 0 1cqw; color: #fff; }
+.wb-mc-n .mdi { font-size: 2.6cqw; line-height: 1; color: var(--wb-accent-sun); font-weight: 400; }
+.wb-mc-hol {
+  flex: none;
+  font-size: 2cqw;
+  line-height: 1.1;
+  color: #ffb3c0;
+  padding-left: .3cqw;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  hyphens: auto;
+  overflow-wrap: anywhere;
+}
+.wb-me {
+  flex: none;
+  font-family: "Roboto Condensed", "Outfit", sans-serif;
+  font-size: 2.15cqw;
+  line-height: 1.18;
+  padding: .25cqw .5cqw;
+  border-left: .7cqw solid rgba(255, 255, 255, .4);
+  background: rgba(255, 255, 255, .07);
+  border-radius: .4cqw;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  hyphens: auto;
+  overflow-wrap: anywhere;
+}
+.wb-me b { font-weight: 500; opacity: .8; }
+/* Colours of solid entries come from the member colour (lib/color.js readableText). */
+/* One line: nowrap rather than a 1-line clamp, whose hidden second line can show its
+   diacritics (Š) in the bottom padding. */
+.wb-me.all {
+  display: block;
+  border-left: none;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.wb-me.past { opacity: .45; }
+/* Multi-day bar pieces: square inner ends, reaching the neighbouring piece across the gap. */
+.wb-me.bar { border-radius: 0; }
+.wb-me.bar.roundL { border-top-left-radius: .4cqw; border-bottom-left-radius: .4cqw; }
+.wb-me.bar.roundR { border-top-right-radius: .4cqw; border-bottom-right-radius: .4cqw; }
+.wb-me.bar.extL { margin-left: calc(-1 * (var(--wb-mpad) + var(--wb-mgap) / 2)); padding-left: calc(.5cqw + var(--wb-mpad) + var(--wb-mgap) / 2); }
+.wb-me.bar.extR { margin-right: calc(-1 * (var(--wb-mpad) + var(--wb-mgap) / 2)); }
+.wb-me.gap { visibility: hidden; }
+.wb-mc-more {
+  flex: none;
+  margin-top: auto;
+  font-size: 2cqw;
+  line-height: 1.15;
+  padding-left: .5cqw;
+  opacity: .85;
+}
+
 /* ---------- page dots ---------- */
 .wb-dots {
   position: absolute;

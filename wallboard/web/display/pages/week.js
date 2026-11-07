@@ -46,8 +46,8 @@ function weatherFor(weather, iso) {
 }
 
 // Time shown on a chip: start time on the start day; on later days of a timed event the
-// end time ("–01:00") on its last day and nothing in between.
-function chipTime(ev, iso, tz) {
+// end time ("–01:00") on its last day and nothing in between. Also used by the Month page.
+export function chipTime(ev, iso, tz) {
   if (ev.all_day) return "";
   const days = daysOf(ev, tz);
   if (iso === days[0]) return fmtTime(new Date(ev.start));

@@ -15,6 +15,8 @@
 //   spanPart(event, iso)              -> "single" | "start" | "middle" | "end"
 //   pickVisible(events, capacity, pastFn) -> {shown, hidden} when a day has too many events
 //   monthGrid(todayISO)               -> 42 iso dates, Monday-first, 6 weeks
+//   assignLanes(weekDays, events)     -> Map event -> lane for multi-day all-day bars in a week row
+//   barPiece(event, iso, column)      -> how one day's piece of such a bar is drawn
 
 const FALLBACK_TZ = "Europe/Prague";
 const dateFormatters = new Map();
@@ -166,4 +168,52 @@ export function monthGrid(todayISO) {
   const weekday = (new Date(utcOf(first)).getUTCDay() + 6) % 7; // Monday = 0
   const start = addDays(first, -weekday);
   return Array.from({ length: 42 }, (_, i) => addDays(start, i));
+}
+
+// Multi-day all-day events in a month week row are drawn as continuous bars. Each one gets
+// a lane (vertical slot, 0 = top) for the whole row, so its pieces line up from cell to cell;
+// a day renders its lanes first (empty lanes as spacers) and its other entries after them.
+// Greedy interval packing: bars sorted by first day in the row, longer first, then by the
+// usual event order; each takes the lowest lane free over its days. Lanes restart every
+// week row (bars break at Sunday -> Monday). Events that are not multi-day all-day, or do
+// not touch the row, get no lane.
+export function assignLanes(weekDays, events) {
+  const first = weekDays[0];
+  const last = weekDays[weekDays.length - 1];
+  const bars = [];
+  for (const ev of events || []) {
+    if (!ev.all_day) continue;
+    const days = daysOf(ev);
+    if (days.length < 2 || days[0] > last || days[days.length - 1] < first) continue;
+    const s = Math.max(0, dayDiff(first, days[0]));
+    const e = Math.min(weekDays.length - 1, dayDiff(first, days[days.length - 1]));
+    bars.push({ ev, s, e });
+  }
+  bars.sort((a, b) => a.s - b.s || b.e - b.s - (a.e - a.s) || compare(a.ev, b.ev));
+  const laneEnd = []; // last occupied column per lane
+  const out = new Map();
+  for (const { ev, s, e } of bars) {
+    let lane = laneEnd.findIndex((end) => end < s);
+    if (lane < 0) lane = laneEnd.length;
+    laneEnd[lane] = e;
+    out.set(ev, lane);
+  }
+  return out;
+}
+
+// One day's piece of a multi-day all-day bar at grid `column` (0 = Monday .. 6 = Sunday):
+// title on the first piece in the row (event start, or Monday for a continuation), rounded
+// corners only on the event's real ends, and the piece reaches into the gap towards a
+// neighbouring piece in the same row (never past the row's edges).
+export function barPiece(event, iso, column) {
+  const part = spanPart(event, iso);
+  const continuesLeft = part === "middle" || part === "end";
+  const continuesRight = part === "start" || part === "middle";
+  return {
+    title: !continuesLeft || column === 0,
+    roundL: !continuesLeft,
+    roundR: !continuesRight,
+    extL: continuesLeft && column > 0,
+    extR: continuesRight && column < 6,
+  };
 }

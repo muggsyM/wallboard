@@ -23,6 +23,7 @@ from . import google_oauth
 from .config import ConfigStore, Member, Secrets
 from .events import display_range, normalize_google_event, to_json
 from .google_oauth import GoogleError, TokenCache
+from .holidays_cz import czech_holidays
 from .hub import Hub
 
 log = logging.getLogger(__name__)
@@ -59,6 +60,19 @@ def _in_range(ev: dict, first: date, last: date, tz: ZoneInfo) -> bool:
     except (KeyError, ValueError, TypeError):
         return False
     return start <= last and max(last_day, start) >= first
+
+
+def holidays_for_range(first: date, last: date, language: str) -> dict[str, str]:
+    """Czech public holidays in [first, last] as {iso date: name in `language`}.
+
+    The range may span two years (a December month view reaches into January).
+    """
+    out: dict[str, str] = {}
+    for year in range(first.year, last.year + 1):
+        for day, names in czech_holidays(year).items():
+            if first <= day <= last:
+                out[day.isoformat()] = names.get(language) or names["cs"]
+    return dict(sorted(out.items()))
 
 
 def expand_dev_calendar(spec: dict, today: date, tz: ZoneInfo, members: list[Member]) -> list[dict]:
@@ -287,9 +301,17 @@ class GoogleCalendarService:
             events = []
         events = [e for e in events if _in_range(e, first, last, tz)]
         events.sort(key=lambda e: (e["start"], e["title"]))
-        payload = {"range_start": first.isoformat(), "range_end": last.isoformat(), "events": events, "holidays": {}}
-        await self.hub.publish({"type": "calendar", "calendar": payload})
+        await self.hub.publish({"type": "calendar", "calendar": self._payload(first, last, events)})
         await self.hub.set_status("google", {})
+
+    def _payload(self, first: date, last: date, events: list[dict]) -> dict:
+        # Holidays are recomputed on every publish, so a language change shows after the next one.
+        return {
+            "range_start": first.isoformat(),
+            "range_end": last.isoformat(),
+            "events": events,
+            "holidays": holidays_for_range(first, last, self.store.config.language),
+        }
 
     async def _publish(self) -> None:
         first, last = self._range()
@@ -306,13 +328,7 @@ class GoogleCalendarService:
                 if _in_range(e, first, last, tz):
                     events.append({**e, "member_id": member.id, "color": member.color})
         events.sort(key=lambda e: (e["start"], e["title"]))
-        payload = {
-            "range_start": first.isoformat(),
-            "range_end": last.isoformat(),
-            "events": events,
-            "holidays": {},
-        }
-        await self.hub.publish({"type": "calendar", "calendar": payload})
+        await self.hub.publish({"type": "calendar", "calendar": self._payload(first, last, events)})
         await self.hub.set_status("google", dict(self.status))
 
     # ---- HTTP ----

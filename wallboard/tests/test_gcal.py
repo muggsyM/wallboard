@@ -106,7 +106,10 @@ async def test_merges_accounts_and_colors(env):
     await svc.poll_once()
     p = env.published()
     assert (p["range_start"], p["range_end"]) == ("2026-10-26", "2026-12-06")
-    assert p["holidays"] == {}
+    assert p["holidays"] == {
+        "2026-10-28": "Den vzniku samostatného československého státu",
+        "2026-11-17": "Den boje za svobodu a demokracii",
+    }
     assert [(e["title"], e["member_id"], e["color"]) for e in p["events"]] == [
         ("Anglictina", "bob", "#222222"),
         ("Zubar", "anna", "#111111"),
@@ -535,3 +538,44 @@ async def test_second_401_invalidates_token_cache(env):
 def test_calendars_route_requires_admin(env):
     r = TestClient(env.app, follow_redirects=False).get("/api/admin/google/A/calendars")
     assert r.status_code in (401, 303, 403)
+
+
+@respx.mock
+async def test_payload_includes_holidays(env):
+    mock_events("a@x.cz", [])
+    mock_events("b@x.cz", [])
+    svc = env.service()
+    await svc.poll_once()
+    holidays = env.published()["holidays"]
+    assert holidays == {
+        "2026-10-28": "Den vzniku samostatného československého státu",
+        "2026-11-17": "Den boje za svobodu a demokracii",
+    }
+    await svc.stop()
+
+
+@respx.mock
+async def test_holidays_span_two_years(env):
+    mock_events("a@x.cz", [])
+    mock_events("b@x.cz", [])
+    env.clock.t = datetime(2026, 12, 30, 10, 0, tzinfo=timezone.utc)
+    svc = env.service()
+    await svc.poll_once()
+    p = env.published()
+    assert (p["range_start"], p["range_end"]) == ("2026-11-30", "2027-01-05")
+    assert list(p["holidays"]) == ["2026-12-24", "2026-12-25", "2026-12-26", "2027-01-01"]
+    assert p["holidays"]["2027-01-01"] == "Den obnovy samostatného českého státu, Nový rok"
+    await svc.stop()
+
+
+@respx.mock
+async def test_holidays_follow_language_on_next_publish(env):
+    mock_events("a@x.cz", [])
+    mock_events("b@x.cz", [])
+    svc = env.service()
+    await svc.poll_once()
+    assert env.published()["holidays"]["2026-11-17"] == "Den boje za svobodu a demokracii"
+    env.store.save_config(env.store.config.model_copy(update={"language": "en"}))
+    await svc.poll_once()
+    assert env.published()["holidays"] == {"2026-10-28": "Independence Day", "2026-11-17": "Freedom and Democracy Day"}
+    await svc.stop()

@@ -64,5 +64,6 @@
   "weather_snowy_rainy": "Sleet",
   "weather_sunny": "Sunny",
   "weather_windy": "Windy",
-  "weather_windy_variant": "Windy and cloudy"
+  "weather_windy_variant": "Windy and cloudy",
+  "max_events_per_day": "Max events per day"
 }

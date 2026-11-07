@@ -64,5 +64,6 @@
   "weather_snowy_rainy": "Déšť se sněhem",
   "weather_sunny": "Slunečno",
   "weather_windy": "Větrno",
-  "weather_windy_variant": "Větrno a oblačno"
+  "weather_windy_variant": "Větrno a oblačno",
+  "max_events_per_day": "Max. událostí za den"
 }
