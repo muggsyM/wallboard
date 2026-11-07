@@ -123,7 +123,8 @@ def test_action_routed(app, client):
     assert calls == [("light.a", "1")]
 
 
-def test_action_without_handler(client):
+def test_action_without_handler(app, client):
+    app.state.hub.on_action = None
     with client.websocket_connect("/ws") as ws:
         ws.receive_json()
         ws.send_json({"type": "action", "id": "7", "entity_id": "light.a"})

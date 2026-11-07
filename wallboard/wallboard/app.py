@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
+from .actions import ActionHandler
 from .auth import LoginLimiter
 from .config import ConfigStore
 from .ha_client import HAClient
@@ -31,6 +32,7 @@ def create_app(data_dir: Path) -> FastAPI:
     app.state.hub = Hub()
     app.state.hub.set_topic("config", app.state.store.public_config())
     app.state.ha = HAClient(app.state.store, app.state.hub)
+    app.state.hub.on_action = ActionHandler(app.state.store, app.state.hub, app.state.ha).handle
     app.include_router(admin.router)
     app.include_router(display.router)
     display.mount_static(app)
