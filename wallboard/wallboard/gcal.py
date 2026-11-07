@@ -45,7 +45,12 @@ def _local_midnight(day: date, tz: ZoneInfo) -> str:
 
 
 def _valid_event(e: object) -> bool:
-    return isinstance(e, dict) and all(k in e for k in EVENT_KEYS)
+    return (
+        isinstance(e, dict)
+        and all(k in e for k in EVENT_KEYS)
+        and isinstance(e["title"], str)
+        and (e.get("location") is None or isinstance(e["location"], str))
+    )
 
 
 def _in_range(ev: dict, first: date, last: date, tz: ZoneInfo) -> bool:

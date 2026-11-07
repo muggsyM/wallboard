@@ -51,8 +51,9 @@ def normalize_google_event(item: dict, member: Member, tz: ZoneInfo) -> Event | 
         return None
     return Event(
         id=str(item.get("id", "")),
-        title=item.get("summary") or NO_TITLE,
-        location=item.get("location") or None,
+        # R12: anything not a string (a number, an object) becomes text, never raw JSON on the wall.
+        title=str(item.get("summary") or "") or NO_TITLE,
+        location=str(item.get("location") or "") or None,
         start=start[0],
         end=end[0],
         all_day=start[1],

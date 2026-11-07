@@ -481,7 +481,15 @@ async def test_bad_cached_events_dropped_on_load(env):
         "accounts": {
             "A": {
                 "fetched_at": NOW.isoformat(),
-                "calendars": {"a@x.cz": [good, "junk", {"id": "2", "title": "no start"}]},
+                "calendars": {
+                    "a@x.cz": [
+                        good,
+                        "junk",
+                        {"id": "2", "title": "no start"},
+                        {**good, "id": "3", "title": 42},  # R12: non-str title rejected
+                        {**good, "id": "4", "title": None},
+                    ]
+                },
             }
         }
     }

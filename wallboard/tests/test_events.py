@@ -102,6 +102,19 @@ def test_title_fallback_and_fields():
     assert ev.all_day is True
 
 
+def test_non_string_title_and_location_coerced():
+    # R12: Google (or a proxy) sending a number/object must never put non-strings on the wall.
+    base = {"id": 7, "start": {"date": "2026-11-07"}, "end": {"date": "2026-11-08"}}
+    ev = normalize_google_event({**base, "summary": 42, "location": 12}, MEMBER, TZ)
+    assert ev.title == "42" and ev.location == "12" and ev.id == "7"
+    ev = normalize_google_event({**base, "summary": {"x": 1}, "location": ["a"]}, MEMBER, TZ)
+    assert isinstance(ev.title, str) and isinstance(ev.location, str)
+    ev = normalize_google_event({**base, "summary": "", "location": ""}, MEMBER, TZ)
+    assert ev.title == "(bez názvu)" and ev.location is None
+    ev = normalize_google_event({**base, "summary": None, "location": None}, MEMBER, TZ)
+    assert ev.title == "(bez názvu)" and ev.location is None
+
+
 def test_to_json_shapes():
     ev = all_day("2026-11-20", "2026-11-23")
     assert to_json(ev) == {
