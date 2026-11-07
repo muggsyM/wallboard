@@ -7,3 +7,6 @@ __pycache__/
 
 # Brainstorm mockups
 .superpowers/
+
+# Venv when the repo is cloned to ~/wallboard (deploy/install.sh)
+/.venv/

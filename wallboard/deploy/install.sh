@@ -50,7 +50,7 @@ apt_has() { apt-cache show "$1" >/dev/null 2>&1; }
 [ -f "$APP_DIR/pyproject.toml" ] || die "cannot find $APP_DIR/pyproject.toml - run the script from the repo checkout"
 case "$DATA_DIR" in /*) ;; *) die "WALLBOARD_DATA must be an absolute path" ;; esac
 for p in "$APP_DIR" "$VENV" "$DATA_DIR"; do
-    case "$p" in *[[:space:]]*) die "paths with spaces are not supported: $p" ;; esac
+    case "$p" in *[[:space:]%]*) die "paths with spaces or % are not supported: $p" ;; esac
 done
 [[ "$OUTPUT" =~ ^[A-Za-z0-9._-]+$ ]] || die "OUTPUT looks wrong: $OUTPUT"
 case "$ROTATION" in
@@ -72,6 +72,8 @@ elif apt_has chromium-browser; then
 else
     die "neither the chromium nor the chromium-browser package is available"
 fi
+# unclutter-xfixes only works in X11 sessions; it is kept for those. Under labwc (Wayland)
+# the page hides the cursor itself.
 if apt_has unclutter-xfixes; then
     packages+=(unclutter-xfixes)
 else
@@ -92,6 +94,7 @@ fi
 say "Data directory: $DATA_DIR"
 mkdir -p -m 700 "$DATA_DIR"
 
+# Exit status: 0 = password set, 1 = no password yet, 2 = secrets.json unreadable.
 has_password() {
     "$VENV/bin/python" - "$DATA_DIR/secrets.json" <<'PY'
 import json, sys
@@ -100,12 +103,20 @@ try:
         data = json.load(f)
 except FileNotFoundError:
     sys.exit(1)
+except (OSError, ValueError):
+    sys.exit(2)
+if not isinstance(data, dict):
+    sys.exit(2)
 sys.exit(0 if data.get("admin_password_hash") else 1)
 PY
 }
 
-if has_password; then
+pw_status=0
+has_password || pw_status=$?
+if [ "$pw_status" -eq 0 ]; then
     echo "Admin password already set - keeping it."
+elif [ "$pw_status" -ne 1 ]; then
+    die "$DATA_DIR/secrets.json is unreadable - fix it or move it aside, then rerun"
 else
     [ -t 0 ] || die "no admin password yet - run the script in a terminal so it can ask for one"
     say "Choose the admin password for the Settings and Photos pages (at least 8 characters)"
@@ -152,8 +163,20 @@ if [ ! -f "$RC_XML" ]; then
         printf '<?xml version="1.0"?>\n<labwc_config>\n</labwc_config>\n' >"$RC_XML"
     fi
 fi
-if grep -q '<touch' "$RC_XML"; then
-    echo "Note: $RC_XML already has a <touch> element - leaving it alone."
+# Prints existing <touch> elements, ignoring commented-out ones; fails if there are none.
+existing_touch() {
+    "$VENV/bin/python" - "$RC_XML" <<'PY'
+import re, sys
+with open(sys.argv[1], encoding="utf-8") as f:
+    text = re.sub(r"<!--.*?-->", "", f.read(), flags=re.S)
+lines = [line.strip() for line in text.splitlines() if re.search(r"<touch\b", line)]
+print("\n".join(lines))
+sys.exit(0 if lines else 1)
+PY
+}
+if touch_lines="$(existing_touch)"; then
+    echo "Note: $RC_XML already has a <touch> element - leaving it alone:"
+    printf '      %s\n' "$touch_lines"
     echo "      Make sure it says mapToOutput=\"$OUTPUT\"."
 else
     root_close=""

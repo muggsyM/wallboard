@@ -4,6 +4,8 @@
 Description=Family wallboard server
 After=network-online.target
 Wants=network-online.target
+# Wait for the data dir's disk (e.g. a USB SSD) instead of failing while it is not mounted yet.
+RequiresMountsFor=@DATA_DIR@
 # Never give up restarting (Restart=always below).
 StartLimitIntervalSec=0
 

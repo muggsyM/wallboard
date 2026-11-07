@@ -45,7 +45,7 @@ def _login_page(request: Request, next_: str | None, error: str | None, status: 
 
 @router.get("/admin-static/admin.css", include_in_schema=False)
 async def admin_css() -> FileResponse:
-    return FileResponse(ADMIN_CSS, media_type="text/css")
+    return FileResponse(ADMIN_CSS, media_type="text/css", headers={"Cache-Control": "no-cache"})
 
 
 @router.get("/login", response_class=HTMLResponse)

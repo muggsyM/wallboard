@@ -16,8 +16,18 @@ from .. import auth
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 WS_FORBIDDEN = 4403
+# Code and pages revalidate on every load (cheap ETag/Last-Modified 304s), so after an update the
+# browser never keeps running old modules from its heuristic disk cache. /media stays immutable.
+REVALIDATE = {"Cache-Control": "no-cache"}
 
 router = APIRouter()
+
+
+class _RevalidatingStatic(StaticFiles):
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers.update(REVALIDATE)
+        return response
 
 
 class GuardedStatic:
@@ -28,7 +38,7 @@ class GuardedStatic:
     """
 
     def __init__(self, directory: Path, *, loopback: bool) -> None:
-        self._files = StaticFiles(directory=directory)
+        self._files = _RevalidatingStatic(directory=directory)
         self._loopback = loopback
 
     def _allowed(self, scope) -> bool:
@@ -57,7 +67,7 @@ def mount_static(app) -> None:
 
 @router.get("/", dependencies=[Depends(auth.require_loopback)])
 async def index() -> FileResponse:
-    return FileResponse(WEB_DIR / "display" / "index.html")
+    return FileResponse(WEB_DIR / "display" / "index.html", headers=REVALIDATE)
 
 
 @router.websocket("/ws")

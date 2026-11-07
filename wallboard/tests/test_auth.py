@@ -135,6 +135,20 @@ def test_require_loopback(data_dir, addr, status):
     assert c.get("/_lb").status_code == status
 
 
+def test_display_and_static_files_revalidate(data_dir):
+    """After an update the kiosk must not run cached old modules: no heuristic freshness."""
+    _, c = make_client(data_dir, client=("127.0.0.1", 5000))
+    for path in ("/", "/static/display/shell.js", "/static/shared/i18n.js"):
+        r = c.get(path)
+        assert r.status_code == 200, path
+        assert r.headers.get("cache-control") == "no-cache", path
+    assert c.post("/login", data={"password": "hunter2"}).status_code == 303
+    for path in ("/static/admin/settings.js", "/admin-static/admin.css"):
+        r = c.get(path)
+        assert r.status_code == 200, path
+        assert r.headers.get("cache-control") == "no-cache", path
+
+
 def test_set_password_cli(data_dir):
     answers = iter(["pw-one-long", "pw-one-long"])
     set_password(data_dir, getpass_fn=lambda prompt: next(answers))

@@ -40,6 +40,8 @@ The installer is safe to run again at any time. It:
 - maps the touchscreen to the display in `~/.config/labwc/rc.xml` (`<touch deviceName="" mapToOutput="HDMI-A-1"/>`), so touches line up after rotation. If the file already has a `<touch>` line, it leaves it alone and tells you. Before changing the file, it saves a backup as `rc.xml.wallboard-bak`;
 - turns off screen blanking (`raspi-config nonint do_blanking 1`).
 
+The kiosk browser uses its own profile in `~/.config/wallboard-kiosk`, separate from your normal Chromium.
+
 Note: on a fresh Pi, the new `~/.config/labwc/autostart` may replace the default desktop start-up, so the taskbar may no longer show behind the board. That is fine for a wall display.
 
 ### Options
@@ -136,7 +138,7 @@ cd ~/wallboard
 git pull && ~/wallboard/.venv/bin/pip install -e ./wallboard && sudo systemctl restart wallboard
 ```
 
-The board reconnects to the server by itself. To load new display code, restart the browser with `pkill chromium` (the kiosk starts it again within seconds) or reboot. If the update notes say the install files changed, run `./wallboard/deploy/install.sh` again instead (it keeps your settings, data and password).
+The board reconnects to the restarted server by itself. The server tells the browser to recheck its files on every page load, so the new display code is used the next time the page loads, for example after the next reboot. To switch right away, restart the browser with `pkill chromium` (the kiosk starts it again within seconds). If the update notes say the install files changed, run `./wallboard/deploy/install.sh` again instead (it keeps your settings, data and password).
 
 ## Troubleshooting
 

@@ -4,11 +4,20 @@
 # Portrait: rotate the screen (try 270 if the picture is upside down).
 wlr-randr --output @OUTPUT@ --transform @ROTATION@ || true
 # Wait for the wallboard server, show it full screen, restart the browser if it exits.
+# The kiosk uses its own profile, so another Chromium window can't take over the launch.
 (
+  profile="$HOME/.config/wallboard-kiosk"
   while :; do
     until curl -fs http://localhost:8080/healthz >/dev/null 2>&1; do sleep 2; done
     if command -v chromium >/dev/null 2>&1; then browser=chromium; else browser=chromium-browser; fi
+    # After a power cut, mark the last session as cleanly closed so no "Restore" bar appears.
+    prefs="$profile/Default/Preferences"
+    if [ -f "$prefs" ]; then
+      sed -i -e 's/"exited_cleanly":false/"exited_cleanly":true/' \
+        -e 's/"exit_type":"[^"]*"/"exit_type":"Normal"/' "$prefs" || true
+    fi
     "$browser" --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble \
+      --hide-crash-restore-bubble --user-data-dir="$profile" \
       --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch \
       --ozone-platform=wayland --password-store=basic \
       http://localhost:8080/
