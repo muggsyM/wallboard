@@ -1,7 +1,8 @@
 /* Wall display shell. Portrait 1080×1920; every display size is in cqw (container =
    #app, full viewport width). No backdrop-filter / filter: blur (Pi 4 GPU budget):
    panels are flat translucent fills and the photo sits behind a dark veil. Animations
-   use opacity only. Look follows docs/superpowers/specs/mockups/portrait-v1.html. */
+   use opacity only (the tile spinner: transform, only while pending). Look follows
+   docs/superpowers/specs/mockups/portrait-v1.html. */
 
 :root {
   --wb-panel: rgba(18, 20, 26, .62);
@@ -347,6 +348,236 @@ html, body {
   padding-left: .5cqw;
   opacity: .85;
 }
+
+/* ---------- today page ---------- */
+/* Sizes follow mockups/portrait-v1.html screen 1 (same cqw units). */
+.wb-photo {
+  position: relative;
+  flex: none;
+  height: 36cqw;
+  border-radius: 3cqw;
+  overflow: hidden;
+  background: var(--wb-panel) center / cover no-repeat;
+}
+.wb-photo[hidden] { display: none; }
+.wb-photo img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* Landscape: the whole photo, over its own blurred background (set inline). */
+.wb-photo.landscape img { object-fit: contain; }
+.wb-caption {
+  position: absolute;
+  left: 2.6cqw;
+  bottom: 2.2cqw;
+  right: 2.6cqw;
+  display: flex;
+  align-items: center;
+  gap: 1cqw;
+  font-size: 2.8cqw;
+  opacity: .9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 .3cqw 1.2cqw rgba(0, 0, 0, .7);
+}
+.wb-caption[hidden] { display: none; }
+
+.wb-today {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.wb-today-top {
+  flex: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 2cqw;
+  margin-bottom: 1.4cqw;
+}
+.wb-lbl {
+  flex: none;
+  font-size: 2.7cqw;
+  letter-spacing: .5cqw;
+  text-transform: uppercase;
+  opacity: .65;
+  font-weight: 500;
+}
+.wb-alldays {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 1cqw;
+}
+/* Colours come from the member colour (lib/color.js readableText). */
+.wb-allday {
+  max-width: 100%;
+  font-size: 3.2cqw;
+  font-weight: 500;
+  padding: .9cqw 2.2cqw;
+  border-radius: 5cqw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wb-tl {
+  flex: none;
+  border-left: .5cqw solid rgba(255, 255, 255, .15);
+  padding-left: 3.4cqw;
+  margin-left: 1cqw;
+}
+.wb-ev {
+  display: flex;
+  align-items: center;
+  gap: 2.6cqw;
+  padding: 1.3cqw 0;
+  font-size: 4cqw;
+  line-height: 1.2;
+}
+.wb-ev.past { opacity: .4; }
+.wb-ev-t { width: 12cqw; flex: none; font-weight: 500; font-variant-numeric: tabular-nums; }
+.wb-who {
+  width: 6cqw;
+  height: 6cqw;
+  flex: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 2.7cqw;
+  font-weight: 600;
+}
+.wb-ev-ti { flex: 1; min-width: 0; }
+.wb-ev-title, .wb-ev-loc { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wb-ev-loc { font-size: 2.9cqw; opacity: .6; }
+.wb-now {
+  position: relative;
+  height: 0;
+  margin-left: -4.2cqw;
+  border-top: .5cqw solid #ff6b6b;
+}
+.wb-now-dot {
+  position: absolute;
+  left: -1.1cqw;
+  top: -1.55cqw;
+  width: 2.6cqw;
+  height: 2.6cqw;
+  border-radius: 50%;
+  background: #ff6b6b;
+}
+.wb-tl .wb-more { padding: 1cqw 0 0 14.6cqw; font-size: 3cqw; }
+.wb-tl .wb-empty { padding: 1.3cqw 0; font-size: 3.6cqw; }
+
+.wb-cards3 {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2cqw;
+}
+.wb-card3 {
+  background: rgba(255, 255, 255, .06);
+  border-radius: 2.4cqw;
+  padding: 2.2cqw;
+  font-size: 2.8cqw;
+  min-height: 16cqw;
+  box-sizing: border-box;
+}
+.wb-card3-h {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 3.3cqw;
+  font-weight: 500;
+  margin-bottom: 1cqw;
+}
+.wb-card3-wx { white-space: nowrap; }
+.wb-card3-wx .mdi { color: var(--wb-accent-sun); margin-right: .6cqw; }
+.wb-card3-i { margin-top: .8cqw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wb-card3-more { margin-top: .8cqw; opacity: .7; }
+.wb-dot {
+  display: inline-block;
+  width: 2cqw;
+  height: 2cqw;
+  border-radius: 50%;
+  margin-right: 1cqw;
+  vertical-align: -.1cqw;
+}
+
+/* ---------- tap tiles (tile.js; Today quick tiles, Home) ---------- */
+.wb-tiles {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2cqw;
+}
+.wb-tiles[hidden] { display: none; }
+.wb-tile {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .6cqw;
+  padding: 2.2cqw;
+  border-radius: 2.6cqw;
+  background: rgba(255, 255, 255, .08);
+  font-size: 3cqw;
+  transition: background-color .2s ease;
+}
+.wb-tile .mdi { font-size: 6cqw; line-height: 1; }
+.wb-tile-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wb-tile small {
+  display: flex;
+  align-items: center;
+  gap: 1cqw;
+  min-width: 0;
+  font-size: 2.4cqw;
+  opacity: .65;
+}
+.wb-tile-val { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wb-tile.on { background: rgba(255, 211, 107, .18); }
+.wb-tile.on .mdi { color: var(--wb-accent-sun); }
+.wb-tile.run { background: rgba(123, 224, 165, .16); }
+.wb-tile.run .mdi { color: var(--wb-home); }
+.wb-tile.pending, .wb-tile.pressed { background: rgba(255, 255, 255, .16); }
+.wb-spin {
+  flex: none;
+  width: 2.2cqw;
+  height: 2.2cqw;
+  box-sizing: border-box;
+  border: .45cqw solid rgba(255, 255, 255, .25);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: wb-spin .8s linear infinite;
+}
+@keyframes wb-spin { to { transform: rotate(360deg); } }
+
+/* ---------- toast (toast.js) ---------- */
+.wb-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 30cqw; /* above the Today tiles row, so the reverted tile stays visible */
+  z-index: 5;
+  max-width: 80cqw;
+  transform: translateX(-50%);
+  padding: 1.8cqw 4cqw;
+  border-radius: 5cqw;
+  background: rgba(200, 50, 50, .92);
+  font-size: 3.4cqw;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .3s ease;
+}
+.wb-toast.show { opacity: 1; }
 
 /* ---------- page dots ---------- */
 .wb-dots {

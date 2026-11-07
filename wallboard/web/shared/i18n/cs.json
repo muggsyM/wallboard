@@ -65,5 +65,16 @@
   "weather_sunny": "Slunečno",
   "weather_windy": "Větrno",
   "weather_windy_variant": "Větrno a oblačno",
-  "max_events_per_day": "Max. událostí za den"
+  "max_events_per_day": "Max. událostí za den",
+  "rain_today": "dnes déšť",
+  "rain_tomorrow": "zítra déšť",
+  "rain_on": "déšť {day}",
+  "on_day_1": "v pondělí",
+  "on_day_2": "v úterý",
+  "on_day_3": "ve středu",
+  "on_day_4": "ve čtvrtek",
+  "on_day_5": "v pátek",
+  "on_day_6": "v sobotu",
+  "on_day_7": "v neděli",
+  "scene": "Scéna"
 }

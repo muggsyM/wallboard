@@ -65,5 +65,16 @@
   "weather_sunny": "Sunny",
   "weather_windy": "Windy",
   "weather_windy_variant": "Windy and cloudy",
-  "max_events_per_day": "Max events per day"
+  "max_events_per_day": "Max events per day",
+  "rain_today": "rain today",
+  "rain_tomorrow": "rain tomorrow",
+  "rain_on": "rain {day}",
+  "on_day_1": "Monday",
+  "on_day_2": "Tuesday",
+  "on_day_3": "Wednesday",
+  "on_day_4": "Thursday",
+  "on_day_5": "Friday",
+  "on_day_6": "Saturday",
+  "on_day_7": "Sunday",
+  "scene": "Scene"
 }
