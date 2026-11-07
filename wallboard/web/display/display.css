@@ -527,7 +527,6 @@ html, body {
   border-radius: 2.6cqw;
   background: rgba(255, 255, 255, .08);
   font-size: 3cqw;
-  transition: background-color .2s ease;
 }
 .wb-tile .mdi { font-size: 6cqw; line-height: 1; }
 .wb-tile-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -561,7 +560,9 @@ html, body {
 .wb-toast {
   position: fixed;
   left: 50%;
-  bottom: 30cqw; /* above the Today tiles row, so the reverted tile stays visible */
+  /* Clear of the tiles rows (Today: top at ~27cqw from the bottom), so the reverted
+     tile stays visible. */
+  bottom: 50cqw;
   z-index: 5;
   max-width: 80cqw;
   transform: translateX(-50%);

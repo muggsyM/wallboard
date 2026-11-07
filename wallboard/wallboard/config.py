@@ -69,9 +69,10 @@ def _default_pages() -> list[PageRef]:
 class Config(BaseModel):
     language: Literal["cs", "en"] = "cs"
     timezone: str = "Europe/Prague"
-    # >= 5 s so a pending tile action (5 s timeout) is never paged away.
+    # A tap pauses rotation for touch_pause_seconds; >= 15 s so a pending tile (5 s action
+    # timeout + 5 s safety timer) is never paged away (ruling R19).
     rotation_seconds: int = Field(30, ge=5)
-    touch_pause_seconds: int = Field(120, ge=5)
+    touch_pause_seconds: int = Field(120, ge=15)
     night: NightMode = NightMode()
     members: list[Member] = []
     google_accounts: list[GoogleAccount] = []

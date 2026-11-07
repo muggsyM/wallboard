@@ -21,10 +21,12 @@ import { classifyGesture } from "./lib/gesture.js";
 import { pageOptions } from "./lib/page-options.js";
 
 const PAGE_FADE_MS = 600; // matches .wb-page transition in display.css
-// Config validation already requires >= 5 s; clamp again so a pending tile action
-// (5 s timeout) can never be paged away.
+// Config validation already requires these minimums (rotation >= 5 s, touch pause >= 15 s);
+// clamp again so a pending tile (5 s action timeout + 5 s safety) is never paged away.
 const MIN_SECONDS = 5;
-const atLeastMin = (v, fallback) => Math.max(MIN_SECONDS, Number(v) > 0 ? Number(v) : fallback);
+const MIN_PAUSE_SECONDS = 15;
+const atLeastMin = (v, fallback, min = MIN_SECONDS) => Math.max(min, Number(v) > 0 ? Number(v) : fallback);
+const pauseSeconds = (config) => atLeastMin(config?.touch_pause_seconds, 120, MIN_PAUSE_SECONDS);
 
 function parseDevHash(hash) {
   const params = new URLSearchParams(hash.replace(/^#/, ""));
@@ -79,7 +81,7 @@ async function applyConfig(config) {
   rotator = new Rotator({
     pages: knownPages(config),
     defaultSeconds: atLeastMin(config.rotation_seconds, 30),
-    pauseSeconds: atLeastMin(config.touch_pause_seconds, 120),
+    pauseSeconds: pauseSeconds(config),
     now: Date.now(),
   });
   if (!devPageApplied && DEV.page) {
@@ -90,6 +92,12 @@ async function applyConfig(config) {
   }
   mountCurrent(false);
   refreshClocks();
+}
+
+// ctx.holdRotation(ms): pages call it when a tile action starts, so rotation cannot page
+// away while the tile is pending (a touch already pauses for >= 15 s; this is the guarantee).
+function holdRotation(ms) {
+  rotator?.touch(Date.now(), ms);
 }
 
 function mountCurrent(animate) {
@@ -106,7 +114,7 @@ function mountCurrent(animate) {
     let inst;
     try {
       // ctx.options: the module's settings defaults overlaid with this page's config options.
-      inst = mod.mount(el, { store, t, fmt, photo, options: pageOptions(mod, page) });
+      inst = mod.mount(el, { store, t, fmt, photo, options: pageOptions(mod, page), holdRotation });
     } catch (err) {
       console.error(`wallboard: page "${page.type}" failed to mount`, err);
       inst = { update() {}, destroy() {} };
@@ -191,7 +199,7 @@ store.subscribe((state, change) => {
 app.addEventListener("pointerdown", (e) => {
   if (!e.isPrimary) return;
   const now = Date.now();
-  const pauseMs = atLeastMin(store.get().config?.touch_pause_seconds, 120) * 1000;
+  const pauseMs = pauseSeconds(store.get().config) * 1000;
   wakeUntil = now + pauseMs;
   rotator?.touch(now);
   if (nightOn) {

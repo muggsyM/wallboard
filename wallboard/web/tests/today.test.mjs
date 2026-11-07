@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { setStrings, setLanguage, setTimezone } from "../shared/i18n.js";
-import { rainHint, nowLineIndex, todaySubtitle } from "../display/pages/today.js";
+import { rainHint, nowLineIndex, todaySubtitle, photoAction } from "../display/pages/today.js";
 
 const load = (n) => JSON.parse(readFileSync(new URL(`../shared/i18n/${n}.json`, import.meta.url), "utf8"));
 setStrings("cs", load("cs"));
@@ -76,4 +76,13 @@ test("now line: a long event still running above a finished one", () => {
     ev("later", "2026-11-07T18:00:00+01:00", "2026-11-07T19:00:00+01:00"),
   ];
   assert.equal(nowLineIndex(evs, at("12:00"), "Europe/Prague"), 2);
+});
+
+test("photo: keep the visit's photo (even a failed one) while it is in the list", () => {
+  const ids = (...x) => new Set(x);
+  assert.equal(photoAction("a", ids("a", "b")), "keep");
+  assert.equal(photoAction("a", ids("b")), "pick"); // deleted: pick another
+  assert.equal(photoAction("a", ids()), "hide"); // deleted, none left
+  assert.equal(photoAction(null, ids("a")), "pick"); // photos arrived after mount
+  assert.equal(photoAction(null, ids()), "keep"); // nothing to show, nothing to do
 });

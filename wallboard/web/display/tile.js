@@ -1,6 +1,6 @@
 // Tap tile shared by the Today quick-tiles row and the Home page.
 //
-//   const tile = renderTile(el, tileCfg, haState, onTap)
+//   const tile = renderTile(el, tileCfg, haState, onTap, { holdRotation } = {})
 //   tile.update(haState)   call on every store update with state.ha[tileCfg.entity_id]
 //   tile.destroy()         stops timers and listeners; later action results are ignored
 //
@@ -8,7 +8,9 @@
 // name, value line) and owns its classes: wb-tile + on | run | pending | pressed.
 // `tileCfg` is a config Tile {entity_id, label, icon, group, controllable}; the text comes
 // from describe() with label/icon overrides. `onTap()` must start the action and return its
-// promise, normally () => ctx.store.sendAction(tileCfg.entity_id).
+// promise, normally () => ctx.store.sendAction(tileCfg.entity_id). Pass the page's
+// ctx.holdRotation: each accepted tap calls holdRotation(PENDING_MAX_MS) so rotation cannot
+// page away while the tile is pending (5 s action timeout + 5 s safety timer).
 //
 // Controllable tiles get the data-tap attribute (the shell then does not change page) and a
 // pressed look. A tap shows the optimistic state with a spinner and calls onTap(); further
@@ -21,6 +23,8 @@ import { classifyGesture } from "./lib/gesture.js";
 import { showToast } from "./toast.js";
 
 const SAFETY_MS = 5000;
+const ACTION_TIMEOUT_MS = 5000; // store.sendAction rejects after this
+export const PENDING_MAX_MS = ACTION_TIMEOUT_MS + SAFETY_MS + 1000;
 
 function node(tag, cls) {
   const n = document.createElement(tag);
@@ -28,7 +32,7 @@ function node(tag, cls) {
   return n;
 }
 
-export function renderTile(el, cfg, haState, onTap) {
+export function renderTile(el, cfg, haState, onTap, { holdRotation } = {}) {
   let s = IDLE;
   let ha = haState;
   let alive = true;
@@ -79,6 +83,9 @@ export function renderTile(el, cfg, haState, onTap) {
   function settle(token, ok) {
     if (!alive) return;
     dispatch({ type: "result", token, ok });
+    // Server ok but no HA delta yet: wait up to SAFETY_MS, then quietly show the actual
+    // state. No toast here (accepted ruling): HA confirmed the call, it just did not change
+    // a state we can see (or the change is slow).
     if (ok && s.pending && s.token === token && !safety) {
       safety = setTimeout(() => alive && dispatch({ type: "timeout", token }), SAFETY_MS);
     }
@@ -89,6 +96,7 @@ export function renderTile(el, cfg, haState, onTap) {
     dispatch({ type: "tap", entityId: cfg.entity_id, haState: ha, controllable: Boolean(cfg.controllable) });
     if (s.token === before) return; // ignored
     const token = s.token;
+    holdRotation?.(PENDING_MAX_MS);
     Promise.resolve()
       .then(onTap)
       .then((r) => settle(token, r?.ok === true), () => settle(token, false));

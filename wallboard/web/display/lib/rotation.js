@@ -3,7 +3,7 @@
 //
 // tick(t) only reports that the current page has had its time; the caller then calls
 // next(t), which moves on and restarts the page timer. A touch pauses rotation for
-// pauseSeconds; after the pause the current page gets its full time again.
+// pauseSeconds (or an explicit hold); after the pause the current page gets its full time again.
 
 export class Rotator {
   constructor({ pages = [], defaultSeconds = 30, pauseSeconds = 120, now = 0 } = {}) {
@@ -49,9 +49,11 @@ export class Rotator {
     return true;
   }
 
-  touch(t) {
+  // Pause for pauseSeconds, or for holdMs when given (a pending tile action); a running
+  // longer pause is never shortened.
+  touch(t, holdMs = this.pauseSeconds * 1000) {
     this._lastT = t;
-    this._pausedUntil = Math.max(this._pausedUntil, t + this.pauseSeconds * 1000);
+    this._pausedUntil = Math.max(this._pausedUntil, t + holdMs);
   }
 
   tick(t) {

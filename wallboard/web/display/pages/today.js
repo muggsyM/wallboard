@@ -5,7 +5,9 @@
 //
 // - Photo: one ctx.photo.nextPhoto() per mount (a new photo on every visit). Landscape
 //   photos are contained over their own blurred bg_url, portrait ones cover the frame.
-//   No photos: the frame is hidden and the timeline takes its space.
+//   No photos: the frame is hidden and the timeline takes its space. A photo that fails
+//   to load stays the visit's photo (frame hidden) until it is deleted or the page
+//   re-mounts, so a broken file is never re-fetched or swapped mid-visit (photoAction).
 // - Timeline: all-day chips beside the "Today" label, then timed events in start order
 //   (member initial in the member colour, title, location line); finished events faded;
 //   the red "now" line sits after the last finished event. When it overflows, pickVisible
@@ -58,6 +60,14 @@ export function todaySubtitle(weather, todayISO) {
   if (high !== null && low !== null) temps = t("high_low", { high: Math.round(high), low: Math.round(low) });
   else if (high !== null) temps = `${Math.round(high)}°`;
   return [temps, rainHint(weather?.daily, todayISO)].filter(Boolean).join(" · ");
+}
+
+// What the photo frame does on a store update, given the visit's photo id (also when it
+// failed to load) and the ids currently in the photo list: "keep" | "pick" | "hide".
+export function photoAction(currentId, ids) {
+  if (currentId && ids.has(currentId)) return "keep";
+  if (ids.size) return "pick";
+  return currentId ? "hide" : "keep";
 }
 
 // Where the "now" line goes among today's timed events (start order): right after the last
@@ -161,7 +171,7 @@ export default {
     let alive = true;
     let photo = null;
     let tiles = []; // [{entityId, handle}]
-    let tilesConfig;
+    let tilesKey = null;
 
     function setPhoto(item) {
       photo = item || null;
@@ -171,7 +181,8 @@ export default {
         return;
       }
       frame.classList.toggle("landscape", Boolean(photo.landscape));
-      frame.style.backgroundImage = photo.landscape && photo.bg_url ? `url("${photo.bg_url}")` : "";
+      // JSON.stringify quotes and escapes the URL for CSS url("...").
+      frame.style.backgroundImage = photo.landscape && photo.bg_url ? `url(${JSON.stringify(String(photo.bg_url))})` : "";
       caption.lastElementChild.textContent = photo.caption ?? "";
       caption.hidden = !photo.caption;
       img.src = photo.url;
@@ -180,26 +191,31 @@ export default {
     img.addEventListener("error", () => {
       if (!alive) return;
       console.warn("today photo failed to load", photo?.url);
-      setPhoto(null);
+      // Keep `photo` (photoAction keeps it while it is listed); only hide the frame.
+      frame.hidden = true;
+      img.removeAttribute("src");
     });
 
     // Keep the photo for the whole visit; only replace it when it is deleted.
     function syncPhoto(state) {
-      const ids = new Set((state.photos || []).map((p) => p.id));
-      if (photo && ids.has(photo.id)) return;
-      if (photo || ids.size) setPhoto(ids.size ? ctx.photo.nextPhoto() : null);
+      const action = photoAction(photo?.id ?? null, new Set((state.photos || []).map((p) => p.id)));
+      if (action === "pick") setPhoto(ctx.photo.nextPhoto());
+      else if (action === "hide") setPhoto(null);
     }
 
     function syncTiles(state) {
       const config = state.config;
-      if (config !== tilesConfig) {
-        tilesConfig = config;
+      // Rebuild only when the tile setup changes: a reconnect snapshot brings a new config
+      // object and must not destroy a pending tile (and its failure toast).
+      const key = JSON.stringify([config?.quick_tiles ?? [], config?.tiles ?? []]);
+      if (key !== tilesKey) {
+        tilesKey = key;
         for (const x of tiles) x.handle.destroy();
         const byId = new Map((config?.tiles || []).map((tc) => [tc.entity_id, tc]));
         const cfgs = (config?.quick_tiles || []).map((id) => byId.get(id)).filter(Boolean);
         tiles = cfgs.map((cfg) => {
           const node = el("div");
-          return { entityId: cfg.entity_id, node, handle: renderTile(node, cfg, state.ha?.[cfg.entity_id], () => ctx.store.sendAction(cfg.entity_id)) };
+          return { entityId: cfg.entity_id, node, handle: renderTile(node, cfg, state.ha?.[cfg.entity_id], () => ctx.store.sendAction(cfg.entity_id), { holdRotation: ctx.holdRotation }) };
         });
         tilesEl.replaceChildren(...tiles.map((x) => x.node));
         tilesEl.hidden = tiles.length === 0;
@@ -274,6 +290,7 @@ export default {
         ro?.disconnect();
         document.fonts?.removeEventListener?.("loadingdone", refit);
         for (const x of tiles) x.handle.destroy();
+        img.removeAttribute("src"); // release the decoded bitmap promptly (weeks-long kiosk)
         root.innerHTML = "";
       },
     };

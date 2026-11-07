@@ -59,6 +59,17 @@ test("a second touch extends the pause", () => {
   assert.equal(r.tick(250 * S), true);
 });
 
+test("touch with an explicit hold never shortens a running pause", () => {
+  const r = make();
+  r.touch(0, 12 * S); // tile pending hold
+  assert.equal(r.tick(11 * S), false);
+  assert.equal(r.tick(42 * S), true); // resumed at 12 s, full 30 s after that
+  const p = make();
+  p.touch(0);
+  p.touch(10 * S, 12 * S);
+  assert.equal(p.tick(119 * S), false); // the 120 s touch pause still wins
+});
+
 test("next() resets the page timer", () => {
   const r = make();
   r.next(25 * S);

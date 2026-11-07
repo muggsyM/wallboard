@@ -84,8 +84,14 @@ def test_timezone_must_be_valid():
             Config(timezone=bad)
 
 
-@pytest.mark.parametrize("field", ["rotation_seconds", "touch_pause_seconds"])
-def test_rotation_and_pause_at_least_5(field):
-    assert getattr(Config(**{field: 5}), field) == 5
+def test_rotation_at_least_5():
+    assert Config(rotation_seconds=5).rotation_seconds == 5
     with pytest.raises(ValidationError):
-        Config(**{field: 4})
+        Config(rotation_seconds=4)
+
+
+def test_touch_pause_at_least_15():
+    # Worst-case tile pending: 5 s action timeout + 5 s safety timer (ruling R19).
+    assert Config(touch_pause_seconds=15).touch_pause_seconds == 15
+    with pytest.raises(ValidationError):
+        Config(touch_pause_seconds=14)
