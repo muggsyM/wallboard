@@ -38,8 +38,19 @@ export function calendarStale(status) {
   return accounts.length > 0 && !accounts.includes("ok");
 }
 
-function weatherHtml(weather) {
-  const cur = weather?.current;
+// Current condition and temperature: the live HA weather entity (state + attributes.temperature)
+// when present, else the forecast payload's `current`.
+const UNUSABLE = new Set(["unavailable", "unknown", ""]);
+export function currentWeather(state) {
+  const entity = state?.config?.weather_entity;
+  const live = entity ? state?.ha?.[entity] : null;
+  if (live && !UNUSABLE.has(String(live.state ?? ""))) {
+    return { condition: live.state, temperature: live.attributes?.temperature ?? null };
+  }
+  return state?.weather?.current ?? null;
+}
+
+function weatherHtml(cur) {
   if (!cur || !cur.condition) return "";
   const icon = WEATHER_ICONS[cur.condition] || "mdi-weather-partly-cloudy";
   const temp = Number.isFinite(Number(cur.temperature)) && cur.temperature !== null ? `${Math.round(Number(cur.temperature))}°` : "";
@@ -69,7 +80,7 @@ export function renderHeader(el, state, { titleKey, subtitle } = {}) {
   const stale = calendarStale(state.status)
     ? `<i class="mdi mdi-sync-off wb-cal-stale" title="${esc(t("calendar_stale"))}"></i>`
     : "";
-  const right = `<div class="wb-wx">${stale}${offline}${weatherHtml(state.weather)}</div>
+  const right = `<div class="wb-wx">${stale}${offline}${weatherHtml(currentWeather(state))}</div>
     ${titleKey || !subtitle ? "" : `<div class="wb-sub wb-sub-right">${esc(subtitle)}</div>`}
     ${peopleHtml(state.config, state.ha)}`;
   const html = `<div class="wb-h-left">${left}</div><div class="wb-h-right">${right}</div>`;
