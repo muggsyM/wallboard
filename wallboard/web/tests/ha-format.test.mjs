@@ -82,6 +82,12 @@ test("unavailable, scene, script, other, explicit icon", () => {
   assert.equal(describe("sensor.x", { state: "5", attributes: { icon: "mdi:foo" } }).icon, "mdi-foo");
 });
 
+test("an appliance sensor reporting running is translated", () => {
+  const r = describe("sensor.washer", { state: "running", attributes: { friendly_name: "Washer" } });
+  assert.equal(r.value, t("running"));
+  assert.notEqual(r.value, "Running");
+});
+
 test("WEATHER_ICONS covers all conditions and each has text keys", () => {
   const conds = "clear-night cloudy exceptional fog hail lightning lightning-rainy partlycloudy pouring rainy snowy snowy-rainy sunny windy windy-variant".split(" ");
   const cs = load("cs"), en = load("en");

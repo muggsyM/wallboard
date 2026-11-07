@@ -51,6 +51,18 @@ export function t(key, vars) {
   return s;
 }
 
+// Counted text: "<key>_<Intl plural category>" with {n}, falling back to "<key>_other".
+// cs uses one / few / other ("1 světlo", "2 světla", "5 světel"); en one / other.
+const pluralRules = new Map(); // locale -> Intl.PluralRules
+export function tn(key, n) {
+  const loc = locale();
+  let rules = pluralRules.get(loc);
+  if (!rules) pluralRules.set(loc, (rules = new Intl.PluralRules(loc)));
+  const forms = strings[lang] ?? strings[FALLBACK] ?? {};
+  const cat = rules.select(n);
+  return t(`${key}_${cat}` in forms ? `${key}_${cat}` : `${key}_other`, { n });
+}
+
 const KINDS = {
   time: { hour: "2-digit", minute: "2-digit" },
   longDate: { weekday: "long", day: "numeric", month: "long" },

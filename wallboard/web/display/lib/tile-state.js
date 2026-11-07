@@ -12,7 +12,7 @@
 //   {type:"ha", haState}                           a store update (any; unchanged states are no-ops)
 //   {type:"timeout", token}                        safety timer after an ok result
 //
-// Life of a tap: pending (optimistic state + spinner) -> HA reports a different state or a
+// Life of a tap: pending (optimistic state with "…" + spinner) -> HA reports a different state or a
 // new last_changed -> idle, showing the real state. {ok:true} alone keeps it pending (the
 // caller starts a ~5 s safety timer, then shows whatever HA has). {ok:false} -> idle with
 // `failed` set (revert + toast). Results and timeouts for an older tap are ignored.
@@ -76,6 +76,8 @@ export function tileView(cfg, haState, s) {
   else if (d.kind === "script") tone = state === "on" ? "run" : "";
   else if (d.on && d.kind !== "scene") tone = "on";
   let value = d.unit ? `${d.value} ${d.unit}` : d.value;
+  // The predicted state reads as in progress: "Starting…".
+  if (s.pending && s.optimistic) value = `${value}…`;
   // A scene's state is its last activation time ("unknown" before the first one).
   if (d.kind === "scene" && shown && state !== "unavailable") value = t("scene");
   return { name: cfg.label || d.name, value, icon: cfgIcon(cfg.icon) || d.icon, tone, pending: s.pending };

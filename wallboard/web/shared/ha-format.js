@@ -64,7 +64,7 @@ const KINDS = {
 // Raw HA state -> translation key, for states whose wording we translate.
 const STATE_KEYS = new Set([
   "on", "off", "open", "closed", "opening", "closing", "locked", "unlocked", "docked", "cleaning", "returning",
-  "starting", "idle", "paused", "error", "playing",
+  "starting", "idle", "paused", "error", "playing", "running",
 ]);
 
 const ON_STATES = new Set(["on", "open", "unlocked", "cleaning", "returning", "home", "playing"]);

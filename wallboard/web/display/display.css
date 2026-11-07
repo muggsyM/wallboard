@@ -10,6 +10,7 @@
   --wb-accent-sun: #ffd36b;
   --wb-home: #7be0a5;
   --wb-offline: #ff5a5a;
+  --wb-warn: #ffb35c;
   --wb-fade: .6s;
 }
 
@@ -149,19 +150,6 @@ html, body {
 }
 .wb-avatar.home { border-color: var(--wb-home); }
 .wb-avatar.away { border-color: rgba(255, 255, 255, .3); opacity: .5; }
-
-/* ---------- placeholder pages (until Tasks 14–17) ---------- */
-.wb-placeholder {
-  flex: 1;
-  display: grid;
-  place-items: center;
-}
-.wb-placeholder-title {
-  font-size: 6cqw;
-  font-weight: 300;
-  letter-spacing: .3cqw;
-  opacity: .55;
-}
 
 /* ---------- week page ---------- */
 .wb-page[data-page="week"] { gap: 3cqw; }
@@ -555,6 +543,64 @@ html, body {
   animation: wb-spin .8s linear infinite;
 }
 @keyframes wb-spin { to { transform: rotate(360deg); } }
+
+/* ---------- home page ---------- */
+/* Sizes follow mockups/portrait-v1.html screen 4. */
+.wb-page[data-page="home"] { gap: 2.8cqw; }
+/* The attention line sits under the title (it can be long). */
+.wb-page[data-page="home"] .wb-title .wb-sub { display: block; margin: .8cqw 0 0; line-height: 1.3; }
+.wb-rooms {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2cqw;
+}
+.wb-room {
+  min-width: 0;
+  padding: 2cqw 2.2cqw;
+  border-radius: 2.4cqw;
+  background: rgba(255, 255, 255, .06);
+}
+.wb-room-nm, .wb-room-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wb-room-nm { font-size: 2.8cqw; opacity: .8; }
+.wb-room-t { font-size: 6.4cqw; font-weight: 300; line-height: 1.1; white-space: nowrap; }
+.wb-room-u { font-size: 3.4cqw; margin-left: .4cqw; opacity: .7; }
+.wb-room-meta { font-size: 2.4cqw; opacity: .7; }
+.wb-room-meta[hidden], .wb-rooms[hidden], .wb-home-group[hidden], .wb-status[hidden], .wb-home-empty[hidden] { display: none; }
+.wb-home-group { flex: none; }
+.wb-home-group .wb-lbl { margin-bottom: 1.6cqw; }
+.wb-status {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.wb-srow {
+  display: flex;
+  align-items: center;
+  gap: 2.4cqw;
+  padding: 1.3cqw 0;
+  font-size: 3.4cqw;
+  border-bottom: 1px solid rgba(255, 255, 255, .07);
+}
+.wb-srow:last-child { border-bottom: none; }
+.wb-srow .mdi { flex: none; width: 6cqw; font-size: 5cqw; line-height: 1; text-align: center; }
+.wb-srow-nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wb-srow-v { flex: none; max-width: 40%; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wb-srow.warn .mdi, .wb-srow.warn .wb-srow-v { color: var(--wb-warn); }
+.wb-srow.active .mdi { color: var(--wb-warn); }
+.wb-srow.ok .mdi, .wb-srow.ok .wb-srow-v { color: var(--wb-home); }
+.wb-home-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2cqw;
+  font-size: 4cqw;
+  font-weight: 300;
+  opacity: .7;
+}
+.wb-home-empty .mdi { font-size: 12cqw; line-height: 1; opacity: .6; }
 
 /* ---------- toast (toast.js) ---------- */
 .wb-toast {

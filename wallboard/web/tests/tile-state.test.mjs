@@ -122,14 +122,17 @@ test("tileView: optimistic display while pending", () => {
   const cfg = { entity_id: "light.kitchen", controllable: true };
   const s = tap(IDLE, "light.kitchen", ha("on"));
   const v = tileView(cfg, ha("on"), s);
-  assert.equal(v.value, t("off"));
+  assert.equal(v.value, `${t("off")}…`);
   assert.equal(v.icon, "mdi-lightbulb-outline");
   assert.equal(v.tone, "");
   assert.equal(v.pending, true);
   const vac = { entity_id: "vacuum.robot", controllable: true };
   const sv = tap(IDLE, "vacuum.robot", ha("docked"));
   const vv = tileView(vac, ha("docked", { attributes: { friendly_name: "Robot" } }), sv);
-  assert.equal(vv.value, t("starting"));
+  assert.equal(vv.value, `${t("starting")}…`);
+  // A tap with no state to predict (scene) shows only the spinner and the real value.
+  const ss = tap(IDLE, "scene.good_night", ha("unknown"));
+  assert.equal(tileView({ entity_id: "scene.good_night", controllable: true }, ha("unknown"), ss).value, t("scene"));
   assert.equal(vv.tone, "run");
   assert.equal(tileView(vac, ha("cleaning"), IDLE).tone, "run");
   assert.equal(tileView(vac, ha("docked"), IDLE).tone, "");

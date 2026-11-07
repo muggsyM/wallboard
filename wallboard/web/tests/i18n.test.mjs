@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  setStrings, setLanguage, getLanguage, loadLanguage, t, setTimezone,
+  tn, setStrings, setLanguage, getLanguage, loadLanguage, t, setTimezone,
   fmtTime, fmtLongDate, fmtWeekdayShort, fmtMonthYear, fmtShortDayMonth, fmtNumber,
 } from "../shared/i18n.js";
 
@@ -83,4 +83,18 @@ test("invalid timezone falls back to Europe/Prague instead of breaking fmt", (tc
   assert.equal(fmtTime(new Date("2026-11-06T23:05:00Z")), "00:05");
   assert.equal(warn.mock.callCount(), 1);
   setTimezone("Europe/Prague");
+});
+
+test("tn picks the plural form for the language", () => {
+  setLanguage("en");
+  assert.equal(tn("lights_on", 1), "1 light on");
+  assert.equal(tn("lights_on", 3), "3 lights on");
+  setLanguage("cs");
+  assert.equal(tn("lights_on", 1), "1 světlo svítí");
+  assert.equal(tn("lights_on", 4), "4 světla svítí");
+  assert.equal(tn("lights_on", 5), "5 světel svítí");
+  assert.equal(tn("lights_on", 0), "0 světel svítí");
+  setStrings("cs", { ...cs, x_other: "{n} x" });
+  assert.equal(tn("x", 2), "2 x"); // falls back to _other
+  setStrings("cs", cs);
 });

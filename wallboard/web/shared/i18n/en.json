@@ -76,5 +76,16 @@
   "on_day_5": "Friday",
   "on_day_6": "Saturday",
   "on_day_7": "Sunday",
-  "scene": "Scene"
+  "scene": "Scene",
+  "lights_on_one": "1 light on",
+  "lights_on_few": "{n} lights on",
+  "lights_on_other": "{n} lights on",
+  "attention_open_one": "1 door or window open",
+  "attention_open_few": "{n} doors or windows open",
+  "attention_open_other": "{n} doors or windows open",
+  "attention_running_one": "1 appliance running",
+  "attention_running_few": "{n} appliances running",
+  "attention_running_other": "{n} appliances running",
+  "all_ok": "All good at home",
+  "home_empty": "Set up Home Assistant in Settings"
 }

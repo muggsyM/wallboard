@@ -51,6 +51,16 @@ STATES = {
     "person.alice": {"s": "home", "a": {"friendly_name": "Alice"}},
     "person.bob": {"s": "not_home", "a": {"friendly_name": "Bob"}},
     "sensor.broken": {"s": "unavailable", "a": {"friendly_name": "Broken sensor"}},
+    # Home page: a second and third room, an open window, a washer, a lock, more lights.
+    "sensor.kids_temperature": {"s": "20.4", "a": {"friendly_name": "Kids temperature", "unit_of_measurement": "°C", "device_class": "temperature"}},
+    "sensor.kids_humidity": {"s": "51", "a": {"friendly_name": "Kids humidity", "unit_of_measurement": "%", "device_class": "humidity"}},
+    "sensor.kitchen_temperature": {"s": "22.1", "a": {"friendly_name": "Kitchen temperature", "unit_of_measurement": "°C", "device_class": "temperature"}},
+    "binary_sensor.window_kids": {"s": "on", "a": {"friendly_name": "Kids' window", "device_class": "window"}},
+    "sensor.washer": {"s": "running", "a": {"friendly_name": "Washing machine", "icon": "mdi:washing-machine"}},
+    "lock.front_door": {"s": "locked", "a": {"friendly_name": "Front door lock"}},
+    "light.living": {"s": "on", "a": {"friendly_name": "Living", "brightness": 200}},
+    "light.kids": {"s": "off", "a": {"friendly_name": "Kids"}},
+    "switch.boiler": {"s": "on", "a": {"friendly_name": "Boiler"}},
 }
 
 

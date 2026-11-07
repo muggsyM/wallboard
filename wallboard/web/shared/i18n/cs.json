@@ -76,5 +76,16 @@
   "on_day_5": "v pátek",
   "on_day_6": "v sobotu",
   "on_day_7": "v neděli",
-  "scene": "Scéna"
+  "scene": "Scéna",
+  "lights_on_one": "1 světlo svítí",
+  "lights_on_few": "{n} světla svítí",
+  "lights_on_other": "{n} světel svítí",
+  "attention_open_one": "1 otevřené okno nebo dveře",
+  "attention_open_few": "{n} otevřená okna nebo dveře",
+  "attention_open_other": "{n} otevřených oken nebo dveří",
+  "attention_running_one": "1 spotřebič běží",
+  "attention_running_few": "{n} spotřebiče běží",
+  "attention_running_other": "{n} spotřebičů běží",
+  "all_ok": "Doma je vše v pořádku",
+  "home_empty": "Nastavte Home Assistant v Nastavení"
 }
