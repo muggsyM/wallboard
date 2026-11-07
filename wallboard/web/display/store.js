@@ -1,7 +1,8 @@
 // Display data store fed by WS /ws: holds the latest snapshot plus deltas, reconnects
 // with backoff 1, 2, 4 ... 30 s, and sends tile actions.
 //
-//   store.get()            -> {config, ha, calendar, weather, photos, status, connected}
+//   store.get()            -> {build, config, ha, calendar, weather, photos, status, connected}
+//                             (build: the server's web/ hash from the last snapshot, or null)
 //   store.subscribe(fn)    -> unsubscribe; fn(state, change) where change is the message
 //                             type ("snapshot", "ha", "config", ...) or "connected"
 //   store.sendAction(id)   -> Promise<{ok, error}>; rejects {ok:false, error:"timeout"} after
@@ -21,6 +22,7 @@ export function createStore({
   clearTimeout: cancel = globalThis.clearTimeout.bind(globalThis),
 } = {}) {
   const state = {
+    build: null,
     config: null,
     ha: {},
     calendar: null,
@@ -49,6 +51,7 @@ export function createStore({
   function apply(msg) {
     switch (msg.type) {
       case "snapshot":
+        state.build = msg.build ?? null;
         state.config = msg.config ?? null;
         state.ha = msg.ha ?? {};
         state.calendar = msg.calendar ?? null;

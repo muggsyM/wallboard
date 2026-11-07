@@ -31,9 +31,35 @@ def client(app):
 def test_snapshot_defaults():
     snap = Hub().snapshot()
     assert snap == {
-        "type": "snapshot", "config": None, "ha": {}, "calendar": None,
+        "type": "snapshot", "build": None, "config": None, "ha": {}, "calendar": None,
         "weather": None, "photos": [], "status": {"ha": False, "google": {}},
     }
+
+
+def test_snapshot_carries_build_id(app, client):
+    from wallboard.routes.display import compute_build_id
+
+    build = app.state.hub.snapshot()["build"]
+    assert isinstance(build, str) and len(build) == 12
+    assert build == compute_build_id()  # stable: same files, same id
+    with client.websocket_connect("/ws") as ws:
+        assert ws.receive_json()["build"] == build
+
+
+def test_build_id_changes_with_web_files(tmp_path):
+    from wallboard.routes.display import compute_build_id
+
+    (tmp_path / "display").mkdir()
+    (tmp_path / "display" / "a.js").write_text("one")
+    (tmp_path / "b.css").write_text("x")
+    first = compute_build_id(tmp_path)
+    assert compute_build_id(tmp_path) == first
+    (tmp_path / "display" / "a.js").write_text("two")
+    assert compute_build_id(tmp_path) != first
+    (tmp_path / "display" / "a.js").write_text("one")
+    assert compute_build_id(tmp_path) == first
+    (tmp_path / "display" / "a.js").rename(tmp_path / "display" / "c.js")  # rename counts too
+    assert compute_build_id(tmp_path) != first
 
 
 def test_snapshot_on_connect(app, client):

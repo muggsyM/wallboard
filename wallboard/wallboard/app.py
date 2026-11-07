@@ -43,6 +43,7 @@ def create_app(data_dir: Path) -> FastAPI:
     app.state.login_limiter = LoginLimiter()
     app.state.oauth_states = OAuthStates(lambda: app.state.store.secrets.session_secret)
     app.state.hub = Hub()
+    app.state.hub.build = display.compute_build_id()
     app.state.hub.set_topic("config", app.state.store.public_config())
     app.state.photos = PhotoStore(Path(data_dir), app.state.hub)
     app.state.photos.start()

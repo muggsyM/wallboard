@@ -21,11 +21,13 @@ class Hub:
             "photos": [],
             "status": {"ha": False, "google": {}},
         }
+        # Server build id (hash of web/); the display reloads when it changes.
+        self.build: str | None = None
         # (entity_id, action_id) -> action_result message
         self.on_action: Callable[[str, str], Awaitable[dict]] | None = None
 
     def snapshot(self) -> dict:
-        return {"type": "snapshot", **copy.deepcopy(self._topics)}
+        return {"type": "snapshot", "build": self.build, **copy.deepcopy(self._topics)}
 
     def set_topic(self, name: str, value: Any) -> None:
         """Replace a topic's stored value without broadcasting."""

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -21,6 +22,20 @@ WS_FORBIDDEN = 4403
 REVALIDATE = {"Cache-Control": "no-cache"}
 
 router = APIRouter()
+
+
+def compute_build_id(web_dir: Path = WEB_DIR) -> str:
+    """Short sha256 over the sorted relative paths and contents of every file under web/.
+
+    Sent in each snapshot; the display reloads itself when it changes (ruling R26)."""
+    h = hashlib.sha256()
+    root = Path(web_dir)
+    for path in sorted(p for p in root.rglob("*") if p.is_file()):
+        rel = path.relative_to(root).as_posix().encode("utf-8")
+        h.update(len(rel).to_bytes(4, "big") + rel)
+        data = path.read_bytes()
+        h.update(len(data).to_bytes(8, "big") + data)
+    return h.hexdigest()[:12]
 
 
 class _RevalidatingStatic(StaticFiles):

@@ -212,3 +212,14 @@ test("pending actions reject with offline when the socket drops", async () => {
   await assert.rejects(p, (e) => e.error === "offline");
   assert.deepEqual(timers.pending(), [1000]); // only the reconnect timer is left
 });
+
+test("snapshot exposes the server build id", () => {
+  const { store, sockets } = setup();
+  store.connect();
+  sockets[0].open();
+  assert.equal(store.get().build, null);
+  sockets[0].receive({ ...SNAP, build: "abc123" });
+  assert.equal(store.get().build, "abc123");
+  sockets[0].receive(SNAP);
+  assert.equal(store.get().build, null);
+});

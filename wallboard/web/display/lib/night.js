@@ -18,7 +18,7 @@ function formatter(tz) {
   return f;
 }
 
-function parseHHMM(s) {
+export function parseHHMM(s) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(s ?? ""));
   if (!m) return null;
   const h = Number(m[1]);

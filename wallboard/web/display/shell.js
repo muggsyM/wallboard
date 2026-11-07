@@ -16,7 +16,8 @@ import { createPhoto } from "./photo.js";
 import { refreshClocks, isOffline } from "./header.js";
 import { getPage } from "./pages/registry.js";
 import { Rotator } from "./lib/rotation.js";
-import { isNight } from "./lib/night.js";
+import { isNight, localMinutes } from "./lib/night.js";
+import { trackBuild, nightlyReloadMinute, crossedMinute } from "./lib/reload.js";
 import { classifyGesture } from "./lib/gesture.js";
 import { pageOptions } from "./lib/page-options.js";
 
@@ -52,6 +53,27 @@ let devPageApplied = false;
 let wakeUntil = 0;
 let nightOn = false;
 let gesture = null;
+let loadedBuild = null; // server build id this page was loaded with
+let lastMinute = null; // local minute of day at the previous tick (nightly reload)
+let reloading = false;
+
+// Reload only when the server answers, so a reload never leaves a blank error page on the
+// wall (e.g. the server is mid-restart). A failed check is simply tried again next time.
+async function safeReload(reason) {
+  if (reloading) return;
+  reloading = true;
+  try {
+    const r = await fetch("/healthz", { cache: "no-store" });
+    if (r.ok) {
+      console.info(`wallboard: reloading (${reason})`);
+      location.reload();
+      return;
+    }
+  } catch {
+    // server unreachable: stay on the current page
+  }
+  reloading = false;
+}
 
 // Page types from config that the registry knows; unknown ones are skipped with a warning.
 function knownPages(config) {
@@ -170,12 +192,22 @@ function tick() {
   refreshClocks();
   const config = store.get().config;
   if (!config || !rotator) return;
+  // Nightly safety reload so long-running renderer leaks don't accumulate.
+  const minute = localMinutes(now, config.timezone);
+  if (crossedMinute(lastMinute, minute, nightlyReloadMinute(config.night))) safeReload("nightly");
+  lastMinute = minute;
   setNight(now >= wakeUntil && isNight(now, config.night, config.timezone));
   if (nightOn) return;
   if (!DEV.norotate && rotator.tick(now)) go("next", now);
 }
 
 store.subscribe((state, change) => {
+  if (change === "snapshot") {
+    // A different build after a reconnect means the server was updated: load the new code.
+    const b = trackBuild(loadedBuild, state.build);
+    loadedBuild = b.known;
+    if (b.reload) safeReload("server updated");
+  }
   if (change === "snapshot" || change === "config") {
     const key = JSON.stringify(state.config);
     if (state.config && key !== configKey) {

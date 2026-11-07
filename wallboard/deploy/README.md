@@ -138,7 +138,7 @@ cd ~/wallboard
 git pull && ~/wallboard/.venv/bin/pip install -e ./wallboard && sudo systemctl restart wallboard
 ```
 
-The board reconnects to the restarted server by itself. The server tells the browser to recheck its files on every page load, so the new display code is used the next time the page loads, for example after the next reboot. To switch right away, restart the browser with `pkill chromium` (the kiosk starts it again within seconds). If the update notes say the install files changed, run `./wallboard/deploy/install.sh` again instead (it keeps your settings, data and password).
+The board reconnects to the restarted server by itself, notices that the display files changed and reloads itself within a few seconds, so there is no need to restart the browser. (It also reloads itself once a night, at the night-mode start or else around 03:30, to stay fresh.) If the update notes say the install files changed, run `./wallboard/deploy/install.sh` again instead (it keeps your settings, data and password).
 
 ## Troubleshooting
 
