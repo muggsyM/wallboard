@@ -353,7 +353,7 @@ async def test_list_calendars_pages_and_names(env):
 
 
 def admin_client(env):
-    c = TestClient(env.app)
+    c = TestClient(env.app, headers={"X-Requested-With": "wallboard"})
     c.cookies.set(auth.COOKIE_NAME, auth.new_session_cookie(env.store.secrets.session_secret))
     return c
 

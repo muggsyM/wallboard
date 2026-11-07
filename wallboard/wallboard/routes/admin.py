@@ -1,22 +1,29 @@
-"""Admin routes: login/logout, a read-only config endpoint and Google sign-in."""
+"""Admin routes: login/logout, the settings page and API, HA test/entities and Google sign-in."""
 
 from __future__ import annotations
 
 import html
+import secrets as _secrets
 from pathlib import Path
+from typing import Any, TypeVar
 from urllib.parse import parse_qs, quote, urlsplit
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
-from pydantic import BaseModel
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.concurrency import run_in_threadpool
 
 from .. import auth, google_oauth
-from ..config import GoogleAccount
+from ..actions import CONTROLLABLE_DOMAINS
+from ..config import Config, GoogleAccount, Secrets
+from ..ha_client import HAError, probe_connection, wanted_entities_for
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 LOGIN_HTML = WEB_DIR / "admin" / "login.html"
+SETTINGS_HTML = WEB_DIR / "admin" / "settings.html"
 ADMIN_CSS = WEB_DIR / "admin" / "admin.css"
+MIN_PASSWORD = 8
+HA_TEST_TIMEOUT = 5.0
 
 router = APIRouter()
 
@@ -60,16 +67,20 @@ async def login(request: Request, password: str = Form(""), next: str | None = N
         return _login_page(request, next, WRONG_PASSWORD_MSG, status=401)
     limiter.success(ip)
     resp = RedirectResponse(auth.safe_next(next), status_code=303)
+    _set_session_cookie(resp, store.secrets.session_secret)
+    return resp
+
+
+def _set_session_cookie(resp: Response, secret: str) -> None:
     resp.set_cookie(
         auth.COOKIE_NAME,
-        auth.new_session_cookie(store.secrets.session_secret),
+        auth.new_session_cookie(secret),
         max_age=auth.SESSION_SECONDS,
         path="/",
         httponly=True,
         samesite="strict",
         secure=False,  # plain HTTP on the LAN
     )
-    return resp
 
 
 @router.post("/logout")
@@ -79,9 +90,274 @@ async def logout() -> Response:
     return resp
 
 
+@router.get("/settings", dependencies=[Depends(auth.require_admin)], include_in_schema=False)
+async def settings_page() -> FileResponse:
+    return FileResponse(SETTINGS_HTML, media_type="text/html", headers={"Cache-Control": "no-store"})
+
+
+# ---- settings API ----
+#
+# Stale-write rule: every handler reads store.config / store.secrets right before
+# model_copy + save, with no await in between; nothing read earlier is written back.
+
+
+def _secrets_set(s: Secrets) -> dict[str, bool]:
+    return {
+        "ha_token": bool(s.ha_token),
+        "google_client": bool(s.google_client_id and s.google_client_secret),
+        "admin_password": bool(s.admin_password_hash),
+    }
+
+
+def _admin_view(app) -> dict[str, Any]:
+    """What the settings page needs. Includes Google account emails (admin only); never secrets."""
+    store = app.state.store
+    return {
+        "config": store.config.model_dump(mode="json"),
+        "secrets_set": _secrets_set(store.secrets),
+        "status": app.state.hub.snapshot()["status"],
+        "controllable_domains": sorted(CONTROLLABLE_DOMAINS),
+    }
+
+
+def _error(loc: list, msg: str, type_: str = "value_error") -> dict[str, Any]:
+    return {"loc": loc, "msg": msg, "type": type_}
+
+
+def _invalid(errors: list[dict[str, Any]]) -> JSONResponse:
+    """422 with field paths relative to the body (["members", 0, "color"]), shown next to fields."""
+    return JSONResponse({"detail": errors}, status_code=422)
+
+
+def _pydantic_errors(exc: ValidationError) -> list[dict[str, Any]]:
+    return [
+        _error(list(e["loc"]), e["msg"], e["type"])
+        for e in exc.errors(include_url=False, include_input=False, include_context=False)
+    ]
+
+
+M = TypeVar("M", bound=BaseModel)
+
+
+async def _read_object(request: Request) -> dict[str, Any] | JSONResponse:
+    try:
+        payload = await request.json()
+    except ValueError:
+        return _invalid([_error([], "body must be JSON", "json_invalid")])
+    if not isinstance(payload, dict):
+        return _invalid([_error([], "body must be a JSON object", "dict_type")])
+    return payload
+
+
+async def _parse(request: Request, model: type[M]) -> M | JSONResponse:
+    payload = await _read_object(request)
+    if isinstance(payload, JSONResponse):
+        return payload
+    try:
+        return model.model_validate(payload)
+    except ValidationError as e:
+        return _invalid(_pydantic_errors(e))
+
+
 @router.get("/api/admin/config", dependencies=[Depends(auth.require_admin)])
 async def get_config(request: Request) -> dict:
-    return request.app.state.store.config.model_dump(mode="json")
+    return _admin_view(request.app)
+
+
+def _reconcile(old: Config, new: Config) -> tuple[Config, list[dict[str, Any]]]:
+    """Cross-field rules for a config coming from the settings page.
+
+    - `google_accounts` is server-owned (the Google routes add and remove accounts); `new`
+      already carries the stored list.
+    - A member that still owns a connected Google account cannot be deleted: 422, disconnect
+      it first. This keeps account, refresh token and calendars consistent without a hidden
+      side effect inside a config save.
+    - Calendars of a deleted member are dropped (cascade); any other calendar must reference
+      a connected account and an existing member.
+    """
+    errors: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for i, m in enumerate(new.members):
+        if m.id in seen:
+            errors.append(_error(["members", i, "id"], "duplicate member id"))
+        seen.add(m.id)
+    old_names = {m.id: m.name for m in old.members}
+    deleted = set(old_names) - seen
+    for acct in new.google_accounts:
+        if acct.member_id not in seen:
+            name = old_names.get(acct.member_id, acct.member_id)
+            errors.append(
+                _error(
+                    ["members"],
+                    f"{name} has the Google account {acct.email} connected; disconnect it before removing {name}",
+                    "member_has_google_account",
+                )
+            )
+    accounts = {a.id for a in new.google_accounts}
+    calendars = []
+    for i, cal in enumerate(new.calendars):
+        if cal.account_id not in accounts:
+            errors.append(_error(["calendars", i, "account_id"], "unknown Google account"))
+        elif cal.member_id in seen:
+            calendars.append(cal)
+        elif cal.member_id not in deleted:
+            errors.append(_error(["calendars", i, "member_id"], "unknown member"))
+    return new.model_copy(update={"calendars": calendars}), errors
+
+
+def _ha_inputs(cfg: Config) -> tuple:
+    return (cfg.ha_url, cfg.weather_entity, wanted_entities_for(cfg))
+
+
+def _calendar_inputs(cfg: Config) -> tuple:
+    return (cfg.calendars, cfg.members, cfg.timezone, cfg.language)
+
+
+@router.put("/api/admin/config", dependencies=[Depends(auth.require_admin)])
+async def put_config(request: Request) -> Any:
+    payload = await _read_object(request)
+    if isinstance(payload, JSONResponse):
+        return payload
+    app = request.app
+    store = app.state.store
+    old = store.config  # no await from here until save_config
+    payload["google_accounts"] = [a.model_dump() for a in old.google_accounts]
+    try:
+        new = Config.model_validate(payload)
+    except ValidationError as e:
+        return _invalid(_pydantic_errors(e))
+    new, errors = _reconcile(old, new)
+    if errors:
+        return _invalid(errors)
+    store.save_config(new)
+    await app.state.hub.publish({"type": "config", "config": store.public_config()})
+    if _ha_inputs(old) != _ha_inputs(new):
+        await app.state.ha.restart()
+    if _calendar_inputs(old) != _calendar_inputs(new):
+        app.state.gcal.refresh_now()  # language also changes holiday names
+    return _admin_view(app)
+
+
+class SecretsBody(BaseModel):
+    """Write-only secrets; None or "" keeps the stored value."""
+
+    model_config = ConfigDict(extra="forbid")
+    ha_token: str | None = Field(None, max_length=4096)
+    google_client_id: str | None = Field(None, max_length=1024)
+    google_client_secret: str | None = Field(None, max_length=1024)
+    admin_password: str | None = Field(None, max_length=1024)
+    current_password: str | None = Field(None, max_length=1024)
+
+
+@router.put("/api/admin/secrets", dependencies=[Depends(auth.require_admin)])
+async def put_secrets(request: Request) -> Any:
+    body = await _parse(request, SecretsBody)
+    if isinstance(body, JSONResponse):
+        return body
+    app = request.app
+    store = app.state.store
+    new_hash: str | None = None
+    if body.admin_password:
+        errors = []
+        if len(body.admin_password) < MIN_PASSWORD:
+            errors.append(_error(["admin_password"], f"at least {MIN_PASSWORD} characters"))
+        if not body.current_password:
+            errors.append(_error(["current_password"], "required to change the password"))
+        if errors:
+            return _invalid(errors)
+        # The current password stops a stolen cookie from taking the account over;
+        # throttled like the login form.
+        limiter = app.state.login_limiter
+        ip = request.client.host if request.client else "unknown"
+        wait = limiter.begin(ip)  # synchronous reservation, before any await
+        if wait:
+            return JSONResponse(
+                {"detail": f"Too many attempts. Try again in {wait} seconds."},
+                status_code=429,
+                headers={"Retry-After": str(wait)},
+            )
+        ok = await run_in_threadpool(auth.verify_password, body.current_password, store.secrets.admin_password_hash)
+        if not ok:
+            return JSONResponse({"detail": [_error(["current_password"], "wrong password")]}, status_code=403)
+        limiter.success(ip)
+        new_hash = await run_in_threadpool(auth.hash_password, body.admin_password)
+
+    current = store.secrets  # re-read after the awaits above; no await until save_secrets
+    update: dict[str, Any] = {}
+    for field in ("ha_token", "google_client_id", "google_client_secret"):
+        value = (getattr(body, field) or "").strip()
+        if value and value != getattr(current, field):
+            update[field] = value
+    if new_hash:
+        # A new session secret logs out every other session; this response re-issues a cookie.
+        update["admin_password_hash"] = new_hash
+        update["session_secret"] = _secrets.token_urlsafe(32)
+    if update:
+        store.save_secrets(current.model_copy(update=update))
+
+    resp = JSONResponse({"secrets_set": _secrets_set(store.secrets)})
+    if new_hash:
+        _set_session_cookie(resp, store.secrets.session_secret)
+    if "google_client_id" in update or "google_client_secret" in update:
+        google_oauth.token_cache.clear()
+        app.state.gcal.refresh_now()
+    if "ha_token" in update:
+        await app.state.ha.restart()
+    return resp
+
+
+class HATestBody(BaseModel):
+    url: str = Field(max_length=2048)
+    token: str | None = Field(None, max_length=4096)
+
+
+_BAD_HA_URL = "URL must start with http:// or https://"
+
+
+def _same_url(a: str, b: str | None) -> bool:
+    if not b:
+        return False
+    pa, pb = urlsplit(a.strip()), urlsplit(b.strip())
+    return (pa.scheme, pa.netloc.lower(), pa.path.rstrip("/")) == (pb.scheme, pb.netloc.lower(), pb.path.rstrip("/"))
+
+
+@router.post("/api/admin/ha/test", dependencies=[Depends(auth.require_admin)])
+async def ha_test(request: Request) -> Any:
+    body = await _parse(request, HATestBody)
+    if isinstance(body, JSONResponse):
+        return body
+    url = body.url.strip()
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise HTTPException(status_code=400, detail=_BAD_HA_URL)
+    store = request.app.state.store
+    token = (body.token or "").strip()
+    if not token:
+        # The stored token only ever goes to the stored address: a stolen cookie must not be
+        # able to make the server send it to a host of the caller's choosing.
+        if _same_url(url, store.config.ha_url):
+            token = store.secrets.ha_token or ""
+        else:
+            return {"ok": False, "error": "enter the access token to test a new address", "version": None}
+    if not token:
+        return {"ok": False, "error": "no access token", "version": None}
+    try:
+        return await probe_connection(url, token, timeout=HA_TEST_TIMEOUT)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=_BAD_HA_URL) from None
+
+
+@router.get("/api/admin/ha/entities", dependencies=[Depends(auth.require_admin)])
+async def ha_entities(request: Request) -> list[dict]:
+    ha = request.app.state.ha
+    try:
+        if not ha.connected:
+            raise HAError("not connected")
+        return await ha.list_entities()
+    except HAError as e:
+        if not ha.connected:
+            raise HTTPException(status_code=409, detail="home assistant not connected") from None
+        raise HTTPException(status_code=502, detail=str(e)) from None
 
 
 # ---- Google sign-in ----

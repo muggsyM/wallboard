@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Wallboard</title>
+  <link rel="stylesheet" href="/admin-static/admin.css">
+  <script type="module" src="/static/admin/settings.js"></script>
+</head>
+<body class="settings">
+  <header class="topbar">
+    <h1 id="title">Wallboard</h1>
+    <nav>
+      <a id="photos-link" href="/photos">Photos</a>
+      <form method="post" action="/logout"><button id="logout" type="submit" class="link">Log out</button></form>
+    </nav>
+  </header>
+  <main id="app" aria-live="polite"><p class="muted">…</p></main>
+  <footer class="savebar">
+    <p id="save-status" class="save-status" role="status"></p>
+    <button id="save" type="button" disabled>Save</button>
+  </footer>
+  <datalist id="dl-all"></datalist>
+  <datalist id="dl-person"></datalist>
+  <datalist id="dl-weather"></datalist>
+  <datalist id="dl-sensor"></datalist>
+  <datalist id="dl-light"></datalist>
+  <datalist id="dl-timezones"></datalist>
+</body>
+</html>

@@ -1,4 +1,11 @@
-"""Pure-ASGI middleware: reject unauthenticated admin writes and oversized bodies before any body read."""
+"""Pure-ASGI middleware, before any body read: reject unauthenticated admin writes, admin
+writes without the CSRF header, and oversized bodies.
+
+CSRF: the session cookie is SameSite=Strict; on top of that every admin write must carry
+`X-Requested-With: wallboard`. A cross-site form cannot set headers and a cross-site fetch
+with a custom header needs a CORS preflight this server never grants. No route is exempt
+(the photo upload uses XHR/fetch, which can set the header).
+"""
 
 from __future__ import annotations
 
@@ -10,6 +17,8 @@ from . import auth
 
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 DEFAULT_MAX_BODY = 1024 * 1024
+CSRF_HEADER = "x-requested-with"
+CSRF_VALUE = "wallboard"
 UPLOAD_PATH = "/api/admin/photos/upload"
 UPLOAD_MAX_BODY = 25 * 40 * 1024 * 1024 + 1024 * 1024
 
@@ -33,6 +42,11 @@ class BodyLimitMiddleware:
                 cookie = HTTPConnection(scope).cookies.get(auth.COOKIE_NAME)
                 if not auth.valid_session_cookie(secret, cookie):
                     await JSONResponse({"detail": "unauthorized"}, status_code=401)(scope, receive, send)
+                    return
+                if Headers(scope=scope).get(CSRF_HEADER) != CSRF_VALUE:
+                    await JSONResponse({"detail": "missing X-Requested-With header"}, status_code=403)(
+                        scope, receive, send
+                    )
                     return
             cap = UPLOAD_MAX_BODY if path == UPLOAD_PATH else DEFAULT_MAX_BODY
             length = Headers(scope=scope).get("content-length")

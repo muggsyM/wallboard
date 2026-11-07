@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 
 class NightMode(BaseModel):
@@ -95,15 +95,20 @@ class Config(BaseModel):
             raise ValueError(f"unknown timezone: {v!r}") from None
         return v
 
-    @model_validator(mode="after")
-    def _check_quick_tiles(self) -> Config:
-        if len(self.quick_tiles) > 4:
+    # A field validator (not a model one) so a validation error carries loc ["quick_tiles"],
+    # which the settings page shows next to the field. `tiles` is declared before
+    # `quick_tiles`, so it is in info.data once it validated.
+    @field_validator("quick_tiles")
+    @classmethod
+    def _check_quick_tiles(cls, v: list[str], info: ValidationInfo) -> list[str]:
+        if len(v) > 4:
             raise ValueError("quick_tiles may hold at most 4 entries")
-        known = {t.entity_id for t in self.tiles}
-        missing = [e for e in self.quick_tiles if e not in known]
-        if missing:
-            raise ValueError(f"quick_tiles not present in tiles: {missing}")
-        return self
+        if "tiles" in info.data:
+            known = {t.entity_id for t in info.data["tiles"]}
+            missing = [e for e in v if e not in known]
+            if missing:
+                raise ValueError(f"quick_tiles not present in tiles: {missing}")
+        return v
 
 
 class Secrets(BaseModel):

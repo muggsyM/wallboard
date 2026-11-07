@@ -16,7 +16,9 @@ def make_client(data_dir, password="hunter2", client=("testclient", 50000)):
     if password is not None:
         store = app.state.store
         store.save_secrets(store.secrets.model_copy(update={"admin_password_hash": auth.hash_password(password)}))
-    return app, TestClient(app, follow_redirects=False, client=client, base_url="http://localhost")
+    return app, TestClient(
+        app, follow_redirects=False, client=client, base_url="http://localhost", headers={"X-Requested-With": "wallboard"}
+    )
 
 
 def test_hash_verify():
@@ -102,7 +104,7 @@ def test_admin_api_requires_cookie(data_dir):
     assert c.post("/login", data={"password": "hunter2"}).status_code == 303
     r = c.get("/api/admin/config")
     assert r.status_code == 200
-    assert r.json()["language"] == "cs"
+    assert r.json()["config"]["language"] == "cs"
     assert "session_secret" not in r.text and "admin_password_hash" not in r.text
 
 

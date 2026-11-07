@@ -54,7 +54,9 @@ def app(data_dir):
 
 
 def client(app, peer=("127.0.0.1", 50000), host="localhost", admin=False):
-    c = TestClient(app, follow_redirects=False, client=peer, base_url=f"http://{host}")
+    c = TestClient(
+        app, follow_redirects=False, client=peer, base_url=f"http://{host}", headers={"X-Requested-With": "wallboard"}
+    )
     if admin:
         c.cookies.set(auth.COOKIE_NAME, auth.new_session_cookie(app.state.store.secrets.session_secret))
     return c

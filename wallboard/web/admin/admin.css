@@ -52,3 +52,170 @@ button {
 }
 .error { color: var(--danger); margin: 0 0 16px; }
 code { background: var(--bg); padding: 2px 6px; border-radius: 4px; }
+
+/* ---- settings page (phone first, single column) ---- */
+:root { --line: #2d3441; --ok: #4cd4a0; --input: #12151c; }
+body.settings {
+  display: block;
+  padding: 0 0 96px;
+}
+.settings .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.settings .topbar h1 { margin: 0; font-size: 1.25rem; }
+.settings .topbar nav { display: flex; align-items: center; gap: 16px; }
+.settings .topbar form { margin: 0; }
+.settings a { color: var(--accent); text-decoration: none; }
+.settings main { max-width: 640px; margin: 0 auto; padding: 16px; }
+.panel {
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 16px;
+  scroll-margin-top: 64px;
+}
+.panel h2 { margin: 0 0 12px; font-size: 1.15rem; font-weight: 500; }
+.panel h3 { margin: 20px 0 8px; font-size: 1rem; font-weight: 500; color: var(--muted); }
+.field { display: block; margin-bottom: 12px; }
+.field > span, .field .label { display: block; margin-bottom: 4px; color: var(--muted); font-size: .9rem; }
+.field.inline { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.field.inline > span { margin: 0; color: var(--text); font-size: 1rem; }
+.field.inline > .hint { flex-basis: 100%; margin: 0; }
+.field .hint, .hint { display: block; color: var(--muted); font-size: .85rem; margin: 4px 0 0; }
+p.hint { margin: 0 0 12px; }
+.settings input[type=text], .settings input[type=url], .settings input[type=number],
+.settings input[type=password], .settings input[type=time], .settings select {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--input);
+  color: var(--text);
+  font-size: 1rem;
+  font-family: inherit;
+}
+.settings input:focus, .settings select:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+.settings input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }
+.settings input[type=color] {
+  width: 100%;
+  height: 44px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--input);
+}
+.settings input:disabled + span { color: var(--muted); }
+.settings button {
+  width: auto;
+  margin: 0;
+  min-height: 44px;
+  padding: 10px 16px;
+}
+.settings button.secondary { background: #2a3140; color: var(--text); }
+.settings button.danger { background: transparent; color: var(--danger); border: 1px solid #5a2e33; }
+.settings button.small { min-height: 36px; padding: 6px 12px; font-size: .9rem; }
+.settings button.link { background: none; color: var(--accent); padding: 0; min-height: 0; font-weight: 400; }
+.settings button:disabled { opacity: .45; cursor: default; }
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.row > input, .row > select { flex: 1 1 160px; width: auto; }
+.row.end { justify-content: flex-end; }
+.panel > .row { margin-bottom: 12px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; align-items: end; }
+.grid-member { display: grid; grid-template-columns: 1fr 72px 72px; gap: 0 10px; }
+.stack { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.card-row {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  background: #181c25;
+}
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: .8rem;
+  background: #2a3140;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.badge.ok { background: rgba(76, 212, 160, .15); color: var(--ok); }
+.badge.error { background: rgba(255, 107, 107, .15); color: var(--danger); white-space: normal; }
+.note { margin: 8px 0 12px; padding: 8px 12px; border-radius: 8px; font-size: .95rem; }
+.note.ok { background: rgba(76, 212, 160, .12); color: var(--ok); }
+.note.error { background: rgba(255, 107, 107, .12); color: var(--danger); }
+.muted { color: var(--muted); }
+.field-error { color: var(--danger); font-size: .9rem; margin: 4px 0 0; flex-basis: 100%; }
+.has-error > input, .has-error input, .has-error select { border-color: var(--danger); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips > .row { width: 100%; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 4px 4px 10px;
+  border-radius: 999px;
+  background: #2a3140;
+  font-size: .9rem;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.settings .chip-x {
+  min-height: 28px;
+  width: 28px;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.panel .member-title { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; color: var(--text); }
+.dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+.account { border-top: 1px solid var(--line); padding: 10px 0; margin-bottom: 8px; }
+.account .email { flex: 1 1 auto; overflow-wrap: anywhere; }
+.cals { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.cal-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cal-row label { display: flex; align-items: center; gap: 8px; flex: 1 1 160px; }
+.cal-row select { flex: 0 1 140px; width: auto; }
+.page-row .drag {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -12px -12px 8px;
+  padding: 12px;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.page-row .grip { color: var(--muted); font-size: 1.2rem; }
+.page-row.dragging { outline: 2px solid var(--accent); opacity: .85; }
+.page-row.dragging .drag { cursor: grabbing; }
+.savebar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+.save-status { flex: 1; margin: 0; color: var(--muted); font-size: .9rem; }
+.save-status.ok { color: var(--ok); }
+.save-status.error { color: var(--danger); }
+.savebar button { min-width: 120px; }

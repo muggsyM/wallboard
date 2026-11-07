@@ -7,6 +7,7 @@ import contextlib
 import itertools
 import json
 import logging
+import time
 from datetime import date, datetime, timezone
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -14,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 import websockets
 
-from .config import ConfigStore
+from .config import Config, ConfigStore
 from .hub import Hub
 
 log = logging.getLogger(__name__)
@@ -72,6 +73,56 @@ def forecast_date(value: object, tz: ZoneInfo) -> str:
     return dt.date().isoformat()
 
 
+def wanted_entities_for(cfg: Config) -> set[str]:
+    """Every entity the display needs from HA for this config."""
+    wanted: set[str] = set()
+    for room in cfg.rooms:
+        wanted.add(room.temperature_entity)
+        if room.humidity_entity:
+            wanted.add(room.humidity_entity)
+        wanted.update(room.light_entities)
+    wanted.update(t.entity_id for t in cfg.tiles)
+    wanted.update(cfg.status_entities)
+    wanted.update(cfg.quick_tiles)
+    wanted.update(m.person_entity for m in cfg.members if m.person_entity)
+    if cfg.weather_entity:
+        wanted.add(cfg.weather_entity)
+    return wanted
+
+
+async def probe_connection(url: str, token: str, timeout: float = 5.0) -> dict[str, Any]:
+    """One-off connect + auth handshake for the settings page's Test button.
+
+    Returns {ok, error, version}. `url` must be http(s) (ValueError otherwise). Error strings
+    are fixed texts or exception class names, never anything that could echo the token.
+    """
+    ws_url = _ws_url(url)
+    version: str | None = None
+
+    async def handshake() -> None:
+        nonlocal version
+        async with websockets.connect(ws_url, open_timeout=timeout, close_timeout=1.0, logger=_ws_log) as ws:
+            first = json.loads(await ws.recv())
+            if first.get("type") != "auth_required":
+                raise HAError("not a Home Assistant WebSocket API")
+            await ws.send(json.dumps({"type": "auth", "access_token": token}))
+            reply = json.loads(await ws.recv())
+            if reply.get("type") != "auth_ok":
+                raise HAError("authentication rejected (check the token)")
+            v = reply.get("ha_version") or first.get("ha_version")
+            version = v if isinstance(v, str) else None
+
+    try:
+        await asyncio.wait_for(handshake(), timeout)
+    except asyncio.TimeoutError:
+        return {"ok": False, "error": "timed out", "version": None}
+    except HAError as exc:
+        return {"ok": False, "error": str(exc), "version": None}
+    except Exception as exc:  # refused, DNS, bad handshake, malformed reply; never str(exc)
+        return {"ok": False, "error": f"cannot connect ({type(exc).__name__})", "version": None}
+    return {"ok": True, "error": None, "version": version}
+
+
 class HAClient:
     filter_attributes = staticmethod(filter_attributes)
 
@@ -104,25 +155,13 @@ class HAClient:
         self._wanted: set[str] = set()
         self._delay = backoff_base
         self._forecast_task: asyncio.Task | None = None
+        self._entities: tuple[float, Any, list[dict[str, str]]] | None = None  # (at, ws, items)
         self.connected = False
 
     # ---- config -------------------------------------------------------------------------
 
     def wanted_entities(self) -> set[str]:
-        cfg = self._store.config
-        wanted: set[str] = set()
-        for room in cfg.rooms:
-            wanted.add(room.temperature_entity)
-            if room.humidity_entity:
-                wanted.add(room.humidity_entity)
-            wanted.update(room.light_entities)
-        wanted.update(t.entity_id for t in cfg.tiles)
-        wanted.update(cfg.status_entities)
-        wanted.update(cfg.quick_tiles)
-        wanted.update(m.person_entity for m in cfg.members if m.person_entity)
-        if cfg.weather_entity:
-            wanted.add(cfg.weather_entity)
-        return wanted
+        return wanted_entities_for(self._store.config)
 
     # ---- lifecycle ----------------------------------------------------------------------
 
@@ -292,11 +331,7 @@ class HAClient:
         return_response: bool = False,
     ) -> dict | None:
         """Call a HA service; returns HA's result. Raises HAError on error, timeout or no connection."""
-        ws = self._ws
-        if ws is None or not self.connected:
-            raise HAError("not connected to Home Assistant")
-        mid = next(self._ids)
-        msg: dict[str, Any] = {"id": mid, "type": "call_service", "domain": domain, "service": service}
+        msg: dict[str, Any] = {"type": "call_service", "domain": domain, "service": service}
         if service_data:
             msg["service_data"] = service_data
         if target is None and entity_id:
@@ -305,6 +340,39 @@ class HAClient:
             msg["target"] = target
         if return_response:
             msg["return_response"] = True
+        return await self._request(msg)
+
+    async def list_entities(self, max_age: float = 30.0) -> list[dict[str, str]]:
+        """All HA entities as [{entity_id, name, domain}] sorted by id, for the settings pickers.
+
+        The subscription covers only wanted entities, so this sends get_states over the live
+        connection. Cached for `max_age` seconds per connection. Raises HAError when not connected.
+        """
+        ws = self._ws
+        cached = self._entities
+        if cached and cached[1] is ws and self.connected and time.monotonic() - cached[0] < max_age:
+            return cached[2]
+        states = await self._request({"type": "get_states"})
+        items = []
+        for st in states if isinstance(states, list) else []:
+            eid = st.get("entity_id") if isinstance(st, dict) else None
+            if not isinstance(eid, str) or "." not in eid:
+                continue
+            name = (st.get("attributes") or {}).get("friendly_name")
+            items.append(
+                {"entity_id": eid, "name": name if isinstance(name, str) else eid, "domain": eid.split(".", 1)[0]}
+            )
+        items.sort(key=lambda e: e["entity_id"])
+        self._entities = (time.monotonic(), ws, items)
+        return items
+
+    async def _request(self, msg: dict[str, Any]) -> Any:
+        """Send one command over the live connection and await its result."""
+        ws = self._ws
+        if ws is None or not self.connected:
+            raise HAError("not connected to Home Assistant")
+        mid = next(self._ids)
+        msg = {"id": mid, **msg}
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
         self._pending[mid] = fut
         try:

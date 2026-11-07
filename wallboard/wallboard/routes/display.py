@@ -8,7 +8,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket
 from fastapi.responses import FileResponse, PlainTextResponse
-from starlette.datastructures import Headers
+from starlette.requests import HTTPConnection
 from starlette.staticfiles import StaticFiles
 from starlette.websockets import WebSocketDisconnect
 
@@ -20,30 +20,39 @@ WS_FORBIDDEN = 4403
 router = APIRouter()
 
 
-class LoopbackStatic:
-    """StaticFiles that only serves loopback clients (the HTTP dependency doesn't cover mounts)."""
+class GuardedStatic:
+    """StaticFiles behind an access check (the HTTP dependencies don't cover mounts).
 
-    def __init__(self, directory: Path) -> None:
+    Serves a valid admin session (the settings page imports display and shared modules) and,
+    when `loopback` is true, also the loopback display browser (loopback peer and Host).
+    """
+
+    def __init__(self, directory: Path, *, loopback: bool) -> None:
         self._files = StaticFiles(directory=directory)
+        self._loopback = loopback
+
+    def _allowed(self, scope) -> bool:
+        conn = HTTPConnection(scope)
+        if self._loopback:
+            client = scope.get("client")
+            if client and client[0] in auth.LOOPBACK_HOSTS and auth.is_loopback_host_header(conn.headers.get("host")):
+                return True
+        secret = scope["app"].state.store.secrets.session_secret
+        return auth.valid_session_cookie(secret, conn.cookies.get(auth.COOKIE_NAME))
 
     async def __call__(self, scope, receive, send) -> None:
-        client = scope.get("client")
-        host = Headers(scope=scope).get("host") if scope["type"] == "http" else None
-        if (
-            scope["type"] != "http"
-            or not client
-            or client[0] not in auth.LOOPBACK_HOSTS
-            or not auth.is_loopback_host_header(host)
-        ):
-            if scope["type"] == "http":
-                await PlainTextResponse("forbidden", status_code=403)(scope, receive, send)
+        if scope["type"] != "http":
+            return
+        if not self._allowed(scope):
+            await PlainTextResponse("forbidden", status_code=403)(scope, receive, send)
             return
         await self._files(scope, receive, send)
 
 
 def mount_static(app) -> None:
-    app.mount("/static/display", LoopbackStatic(WEB_DIR / "display"), name="static-display")
-    app.mount("/static/shared", LoopbackStatic(WEB_DIR / "shared"), name="static-shared")
+    app.mount("/static/display", GuardedStatic(WEB_DIR / "display", loopback=True), name="static-display")
+    app.mount("/static/shared", GuardedStatic(WEB_DIR / "shared", loopback=True), name="static-shared")
+    app.mount("/static/admin", GuardedStatic(WEB_DIR / "admin", loopback=False), name="static-admin")
 
 
 @router.get("/", dependencies=[Depends(auth.require_loopback)])
