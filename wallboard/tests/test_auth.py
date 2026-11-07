@@ -226,7 +226,7 @@ def test_login_limiter_doubles_and_caps():
     waits = []
     for _ in range(8):
         for _ in range(5):
-            lim.begin("a")
+            lim.begin("a")[0]
         waits.append(lim.retry_after("a"))
         now[0] += waits[-1]
     assert waits == [30, 60, 120, 240, 480, 900, 900, 900]
@@ -235,7 +235,7 @@ def test_login_limiter_doubles_and_caps():
 
 def test_limiter_begin_admits_only_max_without_resolution():
     lim = auth.LoginLimiter(now=lambda: 0.0)
-    admitted = [lim.begin("a") == 0 for _ in range(10)]
+    admitted = [lim.begin("a")[0] == 0 for _ in range(10)]
     assert admitted == [True] * 5 + [False] * 5
 
 
@@ -243,16 +243,16 @@ def test_limiter_exponent_clamped():
     now = [0.0]
     lim = auth.LoginLimiter(now=lambda: now[0])
     lim._state["a"] = [4, 0.0, 10_000, 0.0]
-    assert lim.begin("a") == 0
+    assert lim.begin("a")[0] == 0
     assert lim.retry_after("a") == 900
 
 
 def test_limiter_prunes_only_dead_entries():
     now = [0.0]
     lim = auth.LoginLimiter(now=lambda: now[0])
-    lim.begin("old")
+    lim.begin("old")[0]
     now[0] = 10_000
-    lim.begin("new")
+    lim.begin("new")[0]
     assert "old" not in lim._state and "new" in lim._state
 
 
@@ -262,30 +262,60 @@ def test_limiter_full_table_of_live_lockouts_fails_closed():
     lim.MAX_ENTRIES = 4
     for i in range(4):
         lim._state[f"ip{i}"] = [0, 160.0, 1, 100.0]
-    assert lim.begin("fresh") > 0
+    assert lim.begin("fresh")[0] > 0
     assert "fresh" not in lim._state
     assert all(lim._state[f"ip{i}"][1] == 160.0 for i in range(4))
-    assert lim.begin("ip0") == 60  # existing lockout still enforced
+    assert lim.begin("ip0")[0] == 60  # existing lockout still enforced
 
 
 def test_limiter_global_budget_across_ips():
     now = [0.0]
     lim = auth.LoginLimiter(now=lambda: now[0])
     for i in range(30):
-        assert lim.begin(f"ip{i}") == 0
+        assert lim.begin(f"ip{i}")[0] == 0
         now[0] += 1
-    assert lim.begin("another") == 870  # now=30; oldest (t=0) ages out at 900
+    assert lim.begin("another")[0] == 870  # now=30; oldest (t=0) ages out at 900
     assert "another" not in lim._state
     now[0] = 900
-    assert lim.begin("another") == 0
+    assert lim.begin("another")[0] == 0
 
 
 def test_limiter_success_releases_global_slot():
     lim = auth.LoginLimiter(now=lambda: 0.0)
+    tokens = [lim.begin(f"ip{i}")[1] for i in range(30)]
+    lim.success("ip5", tokens[5])
+    assert lim.begin("x")[0] == 0
+
+
+def test_limiter_success_removes_exactly_its_own_reservation():
+    now = [0.0]
+    lim = auth.LoginLimiter(now=lambda: now[0])
+    wait, first = lim.begin("a")  # t=0
+    assert wait == 0 and first is not None
+    now[0] = 100.0
+    _, second = lim.begin("b")  # t=100
+    lim.success("a", first)  # must drop a's t=0 entry, not b's newer t=100 one
+    assert [t for t, _ in lim._global] == [100.0]
+    lim.success("a", first)  # unknown / already released token: no-op
+    assert len(lim._global) == 1
+
+
+def test_limiter_loopback_exempt_from_global_budget_only():
+    now = [0.0]
+    lim = auth.LoginLimiter(now=lambda: now[0])
     for i in range(30):
-        lim.begin(f"ip{i}")
-    lim.success("ip5")
-    assert lim.begin("x") == 0
+        lim.begin(f"10.0.0.{i}")
+    assert lim.begin("10.0.1.1")[0] > 0  # global budget spent
+    for ip in ("127.0.0.1", "::1"):
+        wait, token = lim.begin(ip)
+        assert wait == 0 and token is None  # not counted in, nor blocked by, the global budget
+    assert len(lim._global) == 30
+    # still limited per IP
+    for _ in range(4):
+        assert lim.begin("127.0.0.1")[0] == 0
+    assert lim.begin("127.0.0.1")[0] == 30
+    lim.success("::1", None)  # loopback success: no global entry to release
+    assert len(lim._global) == 30
 
 
 async def test_concurrent_wrong_logins_run_at_most_five_verifications(data_dir, monkeypatch):

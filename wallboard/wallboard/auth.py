@@ -6,6 +6,7 @@ import base64
 import binascii
 import hashlib
 import hmac
+import itertools
 import math
 import os
 import time
@@ -125,7 +126,6 @@ def require_loopback(request: Request) -> None:
     if host not in LOOPBACK_HOSTS or not is_loopback_host_header(request.headers.get("host")):
         raise HTTPException(status_code=403, detail="forbidden")
 
-
 class LoginLimiter:
     """In-memory login-attempt throttle per client IP.
 
@@ -133,6 +133,11 @@ class LoginLimiter:
     concurrent requests cannot all slip past the check while verification is in flight.
     The `max_failures`-th attempt is admitted but triggers a lockout of `lockout_seconds`;
     each further lockout doubles the window, capped at `max_lockout`. `success()` resets the IP.
+
+    A global budget (GLOBAL_MAX_FAILURES per GLOBAL_WINDOW, across all IPs) stops a spread-out
+    guessing attack. Loopback peers (someone on the Pi itself, e.g. over an SSH tunnel) are
+    exempt from that global budget only, so a LAN attack can't lock the owner out of the Pi;
+    they stay limited per IP.
     """
 
     MAX_ENTRIES = 1024
@@ -153,14 +158,16 @@ class LoginLimiter:
         self._now = now
         # ip -> [attempts, locked_until, lockouts, last_seen]
         self._state: dict[str, list] = {}
-        self._global: deque[float] = deque()  # reservation times not cleared by a success
+        # (reservation time, token) of attempts not cleared by a success, oldest first
+        self._global: deque[tuple[float, int]] = deque()
+        self._tokens = itertools.count(1)
 
     def _prune(self, now: float) -> None:
         """Drop only dead entries: unlocked and idle longer than max_lockout. Never evicts live ones."""
         stale = [ip for ip, st in self._state.items() if st[1] <= now and now - st[3] > self.max_lockout]
         for ip in stale:
             del self._state[ip]
-        while self._global and self._global[0] <= now - self.GLOBAL_WINDOW:
+        while self._global and self._global[0][0] <= now - self.GLOBAL_WINDOW:
             self._global.popleft()
 
     def retry_after(self, ip: str) -> int:
@@ -170,21 +177,27 @@ class LoginLimiter:
             return 0
         return max(0, math.ceil(st[1] - self._now()))
 
-    def begin(self, ip: str) -> int:
-        """Reserve an attempt. Returns 0 if admitted, else seconds to wait (attempt refused)."""
+    def begin(self, ip: str) -> tuple[int, int | None]:
+        """Reserve an attempt. Returns (wait, token): wait is 0 if admitted, else seconds to wait
+        (attempt refused). Pass the token to `success()`; it is None when nothing was reserved
+        in the global budget (refused, or a loopback peer)."""
         now = self._now()
         self._prune(now)
         st = self._state.get(ip)
         if st is not None and st[1] > now:
-            return math.ceil(st[1] - now)
+            return math.ceil(st[1] - now), None
         if st is None and len(self._state) >= self.MAX_ENTRIES:
-            return math.ceil(self.lockout_seconds)  # table full of live entries: fail closed
-        if len(self._global) >= self.GLOBAL_MAX_FAILURES:
-            return max(1, math.ceil(self._global[0] + self.GLOBAL_WINDOW - now))
+            return math.ceil(self.lockout_seconds), None  # table full of live entries: fail closed
+        counts_globally = ip not in LOOPBACK_HOSTS
+        if counts_globally and len(self._global) >= self.GLOBAL_MAX_FAILURES:
+            return max(1, math.ceil(self._global[0][0] + self.GLOBAL_WINDOW - now)), None
         if st is None:
             st = self._state[ip] = [0, 0.0, 0, now]
         st[3] = now
-        self._global.append(now)
+        token = None
+        if counts_globally:
+            token = next(self._tokens)
+            self._global.append((now, token))
         st[0] += 1
         if st[0] >= self.max_failures:
             st[1] = now + self.max_lockout  # fail closed if the arithmetic below raises
@@ -192,9 +205,15 @@ class LoginLimiter:
             st[1] = now + window
             st[0] = 0
             st[2] += 1
-        return 0
+        return 0, token
 
-    def success(self, ip: str) -> None:
+    def success(self, ip: str, token: int | None) -> None:
+        """The attempt reserved by `begin()` (its `token`) succeeded: reset the IP and release
+        exactly that global reservation (not whichever came last)."""
         self._state.pop(ip, None)
-        if self._global:
-            self._global.pop()  # the reserved attempt turned out to be a success
+        if token is None:
+            return
+        for entry in self._global:
+            if entry[1] == token:
+                self._global.remove(entry)
+                break

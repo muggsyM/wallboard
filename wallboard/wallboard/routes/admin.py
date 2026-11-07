@@ -58,7 +58,7 @@ async def login(request: Request, password: str = Form(""), next: str | None = N
     store = request.app.state.store
     limiter = request.app.state.login_limiter
     ip = request.client.host if request.client else "unknown"
-    wait = limiter.begin(ip)  # synchronous reservation, before any await
+    wait, token = limiter.begin(ip)  # synchronous reservation, before any await
     if wait:
         resp = _login_page(request, next, f"Too many attempts. Try again in {wait} seconds.", status=429)
         resp.headers["Retry-After"] = str(wait)
@@ -66,7 +66,7 @@ async def login(request: Request, password: str = Form(""), next: str | None = N
     ok = await run_in_threadpool(auth.verify_password, password, store.secrets.admin_password_hash)
     if not ok:
         return _login_page(request, next, WRONG_PASSWORD_MSG, status=401)
-    limiter.success(ip)
+    limiter.success(ip, token)
     resp = RedirectResponse(auth.safe_next(next), status_code=303)
     _set_session_cookie(resp, store.secrets.session_secret)
     return resp
@@ -315,7 +315,7 @@ async def put_secrets(request: Request) -> Any:
         # throttled like the login form.
         limiter = app.state.login_limiter
         ip = request.client.host if request.client else "unknown"
-        wait = limiter.begin(ip)  # synchronous reservation, before any await
+        wait, token = limiter.begin(ip)  # synchronous reservation, before any await
         if wait:
             return JSONResponse(
                 {"detail": f"Too many attempts. Try again in {wait} seconds."},
@@ -327,7 +327,7 @@ async def put_secrets(request: Request) -> Any:
             return JSONResponse(
                 {"detail": [_error(["current_password"], "wrong password", "wrong_password")]}, status_code=403
             )
-        limiter.success(ip)
+        limiter.success(ip, token)
         new_hash = await run_in_threadpool(auth.hash_password, body.admin_password)
 
     current = store.secrets  # re-read after the awaits above; no await until save_secrets

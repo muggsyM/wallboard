@@ -109,7 +109,7 @@ If a calendar later shows **"Sign-in expired – sign in again"**, press *Connec
 - **Settings:** `http://<hostname>.local:8080/settings`. **Photos:** `http://<hostname>.local:8080/photos`.
 - The board itself (`http://localhost:8080/`) only opens on the Pi. Other devices are refused on purpose, so nobody on the network can operate your lights through it.
 - **Change the admin password** in Settings → *Admin password*. Other logged-in devices are logged out.
-- **Login lockout:** after 5 wrong passwords, that device is locked out for a while, and each further lockout lasts longer (up to 15 minutes). If there are 30 failed logins within 15 minutes, everyone is locked out for a while. If you have forgotten the password, set a new one over SSH:
+- **Login lockout:** after 5 wrong passwords, that device is locked out for a while, and each further lockout lasts longer (up to 15 minutes). If there are 30 failed logins within 15 minutes, everyone is locked out for a while, except logins from the Pi itself (for example a browser on the Pi or an SSH tunnel). If you have forgotten the password, set a new one over SSH:
 
   ```sh
   ~/wallboard/.venv/bin/python -m wallboard set-password --data ~/wallboard-data
