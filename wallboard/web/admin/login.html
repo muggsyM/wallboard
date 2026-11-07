@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wallboard login</title>
+  <link rel="stylesheet" href="/admin-static/admin.css">
+</head>
+<body>
+  <main class="card">
+    <h1>Wallboard</h1>
+    {{message}}
+    <form method="post" action="{{action}}">
+      <label for="password">Admin password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" autofocus required>
+      <button type="submit">Log in</button>
+    </form>
+  </main>
+</body>
+</html>

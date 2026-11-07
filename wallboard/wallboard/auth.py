@@ -1,0 +1,97 @@
+"""Admin password hashing (scrypt), signed session cookie, and FastAPI guard dependencies."""
+
+from __future__ import annotations
+
+import base64
+import binascii
+import hashlib
+import hmac
+import os
+import time
+from urllib.parse import quote
+
+from fastapi import HTTPException, Request
+
+COOKIE_NAME = "wb_session"
+SESSION_SECONDS = 30 * 24 * 3600
+
+_N, _R, _P = 2**14, 8, 1
+_SALT_BYTES, _KEY_BYTES = 16, 32
+_MAXMEM = 64 * 1024 * 1024
+LOOPBACK_HOSTS = {"127.0.0.1", "::1"}
+
+
+def hash_password(pw: str) -> str:
+    salt = os.urandom(_SALT_BYTES)
+    key = hashlib.scrypt(pw.encode("utf-8"), salt=salt, n=_N, r=_R, p=_P, dklen=_KEY_BYTES, maxmem=_MAXMEM)
+    return "scrypt${}${}${}${}${}".format(
+        _N, _R, _P, base64.b64encode(salt).decode(), base64.b64encode(key).decode()
+    )
+
+
+def verify_password(pw: str, stored: str | None) -> bool:
+    """Constant-time check; returns False (never raises) for a malformed or missing stored value."""
+    try:
+        if not stored:
+            return False
+        scheme, n, r, p, salt_b64, key_b64 = stored.split("$")
+        if scheme != "scrypt":
+            return False
+        n, r, p = int(n), int(r), int(p)
+        salt = base64.b64decode(salt_b64, validate=True)
+        expected = base64.b64decode(key_b64, validate=True)
+        if n < 2 or n > 2**20 or r < 1 or r > 32 or p < 1 or p > 16 or not salt or not expected:
+            return False
+        actual = hashlib.scrypt(
+            pw.encode("utf-8"), salt=salt, n=n, r=r, p=p, dklen=len(expected), maxmem=_MAXMEM
+        )
+        return hmac.compare_digest(actual, expected)
+    except (ValueError, TypeError, binascii.Error, MemoryError):
+        return False
+
+
+def _sign(secret: str, expiry: str) -> str:
+    return hmac.new(secret.encode(), expiry.encode(), hashlib.sha256).hexdigest()
+
+
+def make_session_cookie(secret: str, expiry: float) -> str:
+    exp = str(int(expiry))
+    return f"{exp}.{_sign(secret, exp)}"
+
+
+def new_session_cookie(secret: str) -> str:
+    return make_session_cookie(secret, time.time() + SESSION_SECONDS)
+
+
+def valid_session_cookie(secret: str, value: str | None) -> bool:
+    if not value:
+        return False
+    exp, sep, sig = value.partition(".")
+    if not sep or not exp.isdigit():
+        return False
+    if not hmac.compare_digest(sig.encode(), _sign(secret, exp).encode()):
+        return False
+    return int(exp) > time.time()
+
+
+def safe_next(target: str | None, default: str = "/settings") -> str:
+    """Only allow local absolute paths ('/x', not '//host' or '/\\host')."""
+    if target and target.startswith("/") and not target.startswith("//") and "\\" not in target:
+        return target
+    return default
+
+
+def require_admin(request: Request) -> None:
+    secret = request.app.state.store.secrets.session_secret
+    if valid_session_cookie(secret, request.cookies.get(COOKIE_NAME)):
+        return
+    path = request.url.path
+    if path.startswith("/api/"):
+        raise HTTPException(status_code=401, detail="unauthorized")
+    raise HTTPException(status_code=303, headers={"Location": f"/login?next={quote(path, safe='/')}"})
+
+
+def require_loopback(request: Request) -> None:
+    host = request.client.host if request.client else None
+    if host not in LOOPBACK_HOSTS:
+        raise HTTPException(status_code=403, detail="forbidden")
