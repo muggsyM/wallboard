@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -11,6 +12,7 @@ from fastapi import FastAPI
 from .actions import ActionHandler
 from .auth import LoginLimiter
 from .config import ConfigStore
+from .google_oauth import OAuthStates, RedactCallbackParams
 from .ha_client import HAClient
 from .hub import Hub
 from .routes import admin, display
@@ -26,9 +28,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app(data_dir: Path) -> FastAPI:
+    access_log = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, RedactCallbackParams) for f in access_log.filters):
+        access_log.addFilter(RedactCallbackParams())
     app = FastAPI(title="wallboard", lifespan=_lifespan)
     app.state.store = ConfigStore(Path(data_dir))
     app.state.login_limiter = LoginLimiter()
+    app.state.oauth_states = OAuthStates(lambda: app.state.store.secrets.session_secret)
     app.state.hub = Hub()
     app.state.hub.set_topic("config", app.state.store.public_config())
     app.state.ha = HAClient(app.state.store, app.state.hub)
