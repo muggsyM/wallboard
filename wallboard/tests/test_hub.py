@@ -181,6 +181,45 @@ async def test_dead_socket_dropped():
     assert dead not in hub._sockets
 
 
+async def test_stuck_socket_dropped_after_timeout(monkeypatch):
+    import asyncio
+
+    from wallboard import hub as hub_mod
+
+    monkeypatch.setattr(hub_mod, "SEND_TIMEOUT", 0.05)
+    hub = Hub()
+
+    class Stuck:
+        closed = False
+
+        async def send_json(self, m):
+            await asyncio.Event().wait()  # never completes
+
+        async def close(self):
+            Stuck.closed = True
+
+    class Live:
+        def __init__(self):
+            self.got = []
+
+        async def send_json(self, m):
+            self.got.append(m)
+
+    stuck, live = Stuck(), Live()
+    hub._sockets.update({stuck, live})
+    await asyncio.wait_for(hub.publish({"type": "ha", "entity_id": "a.b", "state": None}), 2)
+    assert stuck not in hub._sockets and live in hub._sockets
+    assert live.got == [{"type": "ha", "entity_id": "a.b", "state": None}]
+    await asyncio.sleep(0)  # the background close runs
+    assert Stuck.closed  # so the display reconnects for a fresh snapshot
+
+
+def test_send_timeout_is_5s():
+    from wallboard import hub as hub_mod
+
+    assert hub_mod.SEND_TIMEOUT == 5
+
+
 def test_index_loopback_only(app):
     ok = LocalClient(app, client=("127.0.0.1", 1)).get("/")
     assert ok.status_code == 200

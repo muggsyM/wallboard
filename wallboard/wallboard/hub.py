@@ -8,11 +8,13 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 TOPICS = ("config", "ha", "calendar", "weather", "photos", "status")
+SEND_TIMEOUT = 5  # seconds; a socket that can't take a message in time is dropped
 
 
 class Hub:
     def __init__(self) -> None:
         self._sockets: set[Any] = set()
+        self._closing: set[asyncio.Task] = set()
         self._topics: dict[str, Any] = {
             "config": None,
             "ha": {},
@@ -68,7 +70,26 @@ class Hub:
 
     async def _broadcast(self, msg: dict) -> None:
         sockets = list(self._sockets)
-        results = await asyncio.gather(*(ws.send_json(msg) for ws in sockets), return_exceptions=True)
+        # A stuck peer (send buffer full, half-open TCP) must not stall every later broadcast.
+        results = await asyncio.gather(
+            *(asyncio.wait_for(ws.send_json(msg), SEND_TIMEOUT) for ws in sockets), return_exceptions=True
+        )
         for ws, result in zip(sockets, results):
             if isinstance(result, BaseException):
                 self._sockets.discard(ws)
+                if isinstance(result, asyncio.TimeoutError):
+                    # Close it too (best effort, in the background), so a slow but live display
+                    # reconnects and gets a fresh snapshot instead of silently going stale.
+                    task = asyncio.create_task(self._close_quietly(ws))
+                    self._closing.add(task)
+                    task.add_done_callback(self._closing.discard)
+
+    @staticmethod
+    async def _close_quietly(ws) -> None:
+        close = getattr(ws, "close", None)
+        if close is None:
+            return
+        try:
+            await asyncio.wait_for(close(), SEND_TIMEOUT)
+        except Exception:
+            pass
