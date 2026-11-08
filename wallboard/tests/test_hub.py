@@ -511,3 +511,27 @@ def test_public_view_toggle_applies_live(app):
     _set_public_view(app, False)
     assert c.get("/", follow_redirects=False).status_code == 303
     assert c.get("/static/display/shell.js").status_code == 403
+
+
+def test_lan_host_header_helper():
+    from wallboard.auth import is_lan_host_header as lan
+
+    for ok in ["wallboard.local", "wallboard.local:8080", "WALLBOARD.local", "wallboard", "wallboard:80",
+               "10.0.10.14", "10.0.10.14:8080", "[::1]", "[fe80::1]:80", "localhost"]:
+        assert lan(ok), ok
+    for bad in [None, "", "evil.example", "evil.example:8080", "wallboard.local.evil.example",
+                "10.0.10.14.nip.io", "wallboard.local:x", "a b", "[::1]x", "wall_board"]:
+        assert not lan(bad), bad
+
+
+def test_public_view_refuses_rebinding_host(app, media_file):
+    _set_public_view(app, True)
+    c = TestClient(app, base_url="http://evil.example:8080", client=("10.0.10.53", 50000))
+    assert c.get("/", follow_redirects=False).status_code == 303
+    assert c.get("/static/display/shell.js").status_code == 403
+    assert c.get(f"/media/{media_file}").status_code == 403
+    hdrs = {"host": "evil.example:8080", "origin": "http://evil.example:8080"}
+    with c.websocket_connect("/ws", headers=hdrs) as ws:
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_json()
+    assert exc.value.code == 4403

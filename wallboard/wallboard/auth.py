@@ -6,6 +6,7 @@ import base64
 import binascii
 import hashlib
 import hmac
+import ipaddress
 import itertools
 import math
 import os
@@ -150,12 +151,42 @@ def require_loopback(request: Request) -> None:
         raise HTTPException(status_code=403, detail="forbidden")
 
 
+def is_lan_host_header(host: str | None) -> bool:
+    """A Host that can only mean this box on the home network: an IP literal, a single-label
+    name ("wallboard") or an mDNS name ("wallboard.local"), with an optional port.
+
+    Anything with a public-looking domain is refused, so a DNS-rebinding site
+    (evil.example resolving to the Pi) cannot read the password-free board through a
+    visitor's browser."""
+    if not host:
+        return False
+    host = host.strip().lower()
+    if host.startswith("["):  # [IPv6] or [IPv6]:port
+        name, _, rest = host[1:].partition("]")
+        if rest and not (rest.startswith(":") and rest[1:].isdigit()):
+            return False
+    else:
+        name, sep, port = host.rpartition(":")
+        if not sep:
+            name = host
+        elif not port.isdigit():
+            return False
+    try:
+        ipaddress.ip_address(name)
+        return True
+    except ValueError:
+        pass
+    if not name or not all(c.isalnum() or c in "-." for c in name):
+        return False
+    return "." not in name or name.endswith(".local")
+
+
 def public_view_enabled(conn: HTTPConnection) -> bool:
     """Settings switch: anyone on the LAN may view (never control) the board without a login.
 
     Read live from the config store on every request or connection, so toggling it in Settings
-    applies without a restart."""
-    return bool(conn.app.state.store.config.public_view)
+    applies without a restart. Only honoured for LAN-style Host names (see is_lan_host_header)."""
+    return bool(conn.app.state.store.config.public_view) and is_lan_host_header(conn.headers.get("host"))
 
 
 def may_view_board(conn: HTTPConnection) -> bool:
