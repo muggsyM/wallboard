@@ -128,6 +128,7 @@ function forecast(weather, iso) {
 function card(iso, events, weather, tz) {
   const c = el("div", "wb-card3");
   c.dataset.iso = iso;
+  c.dataset.tap = ""; // the shell must not page on a tap here: it opens the day window
   const h = el("div", "wb-card3-h");
   h.append(el("span", "", capitalize(fmtWeekdayShort(noonOf(iso, tz)))));
   const wx = forecast(weather, iso);
