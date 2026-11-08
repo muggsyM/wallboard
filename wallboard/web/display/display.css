@@ -595,6 +595,57 @@ html.remote .wb-tile.view-only { cursor: default; }
 }
 .wb-home-empty .mdi { font-size: 12cqw; line-height: 1; opacity: .6; }
 
+/* ---------- photos page (pages/photos.js) ---------- */
+/* Full screen: the whole #app area, no header. Two layers cross-fade on opacity. */
+.wb-page[data-page="photos"] { inset: 0; gap: 0; }
+.wb-ph-layer {
+  position: absolute;
+  inset: 0;
+  background: #000 center / cover no-repeat;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+}
+.wb-ph-layer.on { opacity: 1; }
+.wb-ph-layer img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* Landscape: the whole photo, centred over its own pre-blurred background (set inline). */
+.wb-ph-layer.landscape img { object-fit: contain; }
+.wb-ph-caption, .wb-ph-clock {
+  position: absolute;
+  bottom: 8cqw; /* above the page dots */
+  font-size: 4.2cqw;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-shadow: 0 .2cqw .4cqw rgba(0, 0, 0, .8), 0 0 2.4cqw rgba(0, 0, 0, .6);
+}
+.wb-ph-caption {
+  left: 5cqw;
+  max-width: 62cqw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wb-ph-clock { right: 5cqw; font-size: 6cqw; font-variant-numeric: tabular-nums; }
+.wb-ph-caption[hidden], .wb-ph-empty[hidden] { display: none; }
+.wb-ph-empty {
+  position: absolute;
+  inset: 0 12cqw;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3cqw;
+  font-size: 5cqw;
+  line-height: 1.3;
+  text-align: center;
+  opacity: .8;
+}
+.wb-ph-empty .mdi { font-size: 16cqw; line-height: 1; opacity: .6; }
+
 /* ---------- toast (toast.js) ---------- */
 .wb-toast {
   position: fixed;

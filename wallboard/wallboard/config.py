@@ -68,7 +68,8 @@ class PageRef(BaseModel):
 
 
 def _default_pages() -> list[PageRef]:
-    return [PageRef(type=t) for t in ("today", "week", "month", "home")]
+    # The Photos slideshow stays longer than the global rotation_seconds by default.
+    return [PageRef(type=t) for t in ("today", "week", "month", "home")] + [PageRef(type="photos", seconds=60)]
 
 
 class Config(BaseModel):

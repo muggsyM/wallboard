@@ -5,8 +5,9 @@ import today from "./today.js";
 import week from "./week.js";
 import month from "./month.js";
 import home from "./home.js";
+import photos from "./photos.js";
 
-export const PAGES = { today, week, month, home };
+export const PAGES = { today, week, month, home, photos };
 
 export function getPage(type) {
   return Object.hasOwn(PAGES, type) ? PAGES[type] : null;

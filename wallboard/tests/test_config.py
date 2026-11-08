@@ -11,7 +11,9 @@ from wallboard.config import Config, ConfigStore, GoogleAccount, Tile
 def test_defaults_created(data_dir):
     store = ConfigStore(data_dir)
     assert store.config.language == "cs"
-    assert [p.type for p in store.config.pages] == ["today", "week", "month", "home"]
+    assert [p.type for p in store.config.pages] == ["today", "week", "month", "home", "photos"]
+    # Only the Photos slideshow has its own (longer) time; the others use rotation_seconds.
+    assert [p.seconds for p in store.config.pages] == [None, None, None, None, 60]
     assert len(store.secrets.session_secret) >= 32
     assert (data_dir / "config.json").exists()
     assert (data_dir / "secrets.json").exists()
