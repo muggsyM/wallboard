@@ -4,7 +4,7 @@
 // with a small day number top-left (today: in a small red circle; the 1st of a month and
 // the first cell add the short month name) with the Czech holiday name (pink) beside it,
 // then up to `max_events_per_day` entries (default 5) as member-colour strips: timed ones a
-// small time line above a title of up to 4 lines, all-day ones up to 2 lines. Identical
+// small time line above a title of up to 3 lines, all-day ones up to 2 lines. Identical
 // single-day all-day titles of several members ("Školka" for two kids) are one neutral strip
 // with a left border in the first member's colour and a dot per member (layout.js
 // mergeSameAllDay); it counts as one entry. Past days are dimmed, weekend numbers tinted.
@@ -101,7 +101,7 @@ function entry(ev, iso, tz, now, today) {
   else if (iso === today && isPast(ev, now, tz)) e.classList.add("past");
   const time = chipTime(ev, iso, tz);
   if (time) e.append(el("b", "", time));
-  // Timed titles clamp to 4 lines, all-day ones to 2 (display.css).
+  // Timed titles clamp to 3 lines, all-day ones to 2 (display.css).
   ti.textContent = ev.title ?? "";
   e.append(ti);
   return e;

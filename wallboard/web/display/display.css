@@ -222,7 +222,7 @@ html.remote #app {
 /* ---------- month page ---------- */
 /* Mockup variant L (mesic-detail; chalkboard, open grid): no cell boxes, a small day number
    top-left with the holiday beside it, today in a small red circle, events as member-colour
-   strips in 3.1cqw (time on a small line above a title of up to 4 lines; all-day entries up
+   strips in 2.5cqw (time on a small line above a title of up to 3 lines; all-day entries up
    to 2 lines; multi-day bars one line so lanes line up). Merged identical all-day entries
    are a neutral strip with member dots. Past days are dimmed. */
 .wb-page[data-page="month"] { gap: 2.4cqw; }
@@ -300,19 +300,19 @@ html.remote #app {
 /* Colours come from the member colour (background + lib/color.js readableText). */
 .wb-me {
   flex: none;
-  font-size: 3.1cqw;
+  font-size: 2.5cqw;
   line-height: 1.1;
   padding: .25cqw .55cqw;
   border-radius: .3cqw;
   background: rgba(255, 255, 255, .12);
   overflow: hidden;
 }
-/* Timed entries: the time on its own small line, then the title clamped to 4 lines. The
+/* Timed entries: the time on its own small line, then the title clamped to 3 lines. The
    clamp sits on the inner span (no padding), so a hidden line's diacritics never show. */
 .wb-me b { display: block; font-size: .8em; opacity: .85; line-height: 1.1; }
 .wb-me-ti {
   display: -webkit-box;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   hyphens: auto;
