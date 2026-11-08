@@ -1,0 +1,6 @@
+.claude/worktrees/
+
+# Real config holds your HA access token
+www/dakboard/config.js
+
+__pycache__/
