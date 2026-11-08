@@ -224,7 +224,8 @@ def test_index_loopback_only(app):
     ok = LocalClient(app, client=("127.0.0.1", 1)).get("/")
     assert ok.status_code == 200
     assert LocalClient(app, client=("::1", 1)).get("/").status_code == 200
-    assert LocalClient(app, client=("192.168.1.20", 1)).get("/").status_code == 403
+    r = LocalClient(app, client=("192.168.1.20", 1)).get("/", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/login?next=/"
 
 
 def test_static_loopback_only(app):
@@ -286,7 +287,7 @@ def test_ws_rejects_evil_host(app):
 def test_http_rejects_evil_host(app):
     c = LocalClient(app, client=("127.0.0.1", 1))
     evil = {"host": "evil.example"}
-    assert c.get("/", headers=evil).status_code == 403
+    assert c.get("/", headers=evil, follow_redirects=False).status_code == 303
     assert c.get("/static/display/index.html", headers=evil).status_code == 403
     assert c.get("/", headers={"host": "localhost:8080"}).status_code == 200
 
@@ -309,3 +310,56 @@ def test_binary_frame_ignored(client):
         ws.send_bytes(b"\x00\x01")
         ws.send_json({"type": "action", "id": "3", "entity_id": "light.a"})
         assert ws.receive_json()["id"] == "3"
+
+
+def _lan_admin(app, host="10.0.10.14:8080"):
+    from wallboard import auth
+
+    c = TestClient(app, base_url=f"http://{host}", client=("10.0.10.53", 50000))
+    c.cookies.set(auth.COOKIE_NAME, auth.new_session_cookie(app.state.store.secrets.session_secret))
+    return c
+
+
+def test_index_for_lan_admin(app):
+    c = _lan_admin(app)
+    assert c.get("/").status_code == 200
+    assert c.get("/static/display/shell.js").status_code == 200
+
+
+def test_ws_for_lan_admin_same_origin(app):
+    c = _lan_admin(app)
+    hdrs = {"host": "10.0.10.14:8080", "origin": "http://10.0.10.14:8080"}
+    with c.websocket_connect("/ws", headers=hdrs) as ws:
+        assert ws.receive_json()["type"] == "snapshot"
+
+
+@pytest.mark.parametrize("origin", [None, "http://evil.example", "http://10.0.10.14:9999", "null"])
+def test_ws_lan_admin_needs_same_origin(app, origin):
+    c = _lan_admin(app)
+    hdrs = {"host": "10.0.10.14:8080"}
+    if origin:
+        hdrs["origin"] = origin
+    with c.websocket_connect("/ws", headers=hdrs) as ws:
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_json()
+    assert exc.value.code == 4403
+
+
+def test_ws_lan_same_origin_without_cookie_rejected(app):
+    c = TestClient(app, base_url="http://10.0.10.14:8080", client=("10.0.10.53", 50000))
+    hdrs = {"host": "10.0.10.14:8080", "origin": "http://10.0.10.14:8080"}
+    with c.websocket_connect("/ws", headers=hdrs) as ws:
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_json()
+    assert exc.value.code == 4403
+
+
+def test_same_origin_helper():
+    from wallboard.auth import is_same_origin as so
+
+    assert so("http://wallboard.local:8080", "wallboard.local:8080")
+    assert so("http://WALLBOARD.local:8080", "wallboard.local:8080")
+    assert not so("http://wallboard.local:8080", "wallboard.local")
+    assert not so("http://evil.example", "wallboard.local:8080")
+    assert not so("http://user@wallboard.local:8080", "wallboard.local:8080")
+    assert not so(None, "wallboard.local:8080") and not so("null", "x") and not so("http://x:bad", "x:bad")

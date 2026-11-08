@@ -14,6 +14,7 @@ from collections import deque
 from urllib.parse import quote, urlsplit
 
 from fastapi import HTTPException, Request
+from starlette.requests import HTTPConnection
 
 COOKIE_NAME = "wb_session"
 SESSION_SECONDS = 30 * 24 * 3600
@@ -121,10 +122,39 @@ def is_allowed_display_origin(origin: str | None) -> bool:
     return parts.scheme in ("http", "https") and (parts.hostname or "") in _ORIGIN_HOSTNAMES
 
 
+def is_same_origin(origin: str | None, host: str | None) -> bool:
+    """True when a browser Origin names exactly the host (and port) the request was sent to."""
+    if not origin or not host:
+        return False
+    try:
+        parts = urlsplit(origin)
+        parts.port  # raises ValueError on a bad port
+    except ValueError:
+        return False
+    return parts.scheme in ("http", "https") and parts.netloc.lower() == host.lower()
+
+
+def is_loopback_request(conn: HTTPConnection) -> bool:
+    """Loopback peer and loopback Host header: the kiosk browser on the Pi itself."""
+    host = conn.client.host if conn.client else None
+    return host in LOOPBACK_HOSTS and is_loopback_host_header(conn.headers.get("host"))
+
+
+def has_admin_session(conn: HTTPConnection) -> bool:
+    secret = conn.app.state.store.secrets.session_secret
+    return valid_session_cookie(secret, conn.cookies.get(COOKIE_NAME))
+
+
 def require_loopback(request: Request) -> None:
-    host = request.client.host if request.client else None
-    if host not in LOOPBACK_HOSTS or not is_loopback_host_header(request.headers.get("host")):
+    if not is_loopback_request(request):
         raise HTTPException(status_code=403, detail="forbidden")
+
+
+def require_display_viewer(request: Request) -> None:
+    """The kiosk on the Pi, or a logged-in admin viewing the board from another device."""
+    if is_loopback_request(request):
+        return
+    require_admin(request)
 
 class LoginLimiter:
     """In-memory login-attempt throttle per client IP.

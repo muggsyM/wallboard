@@ -80,20 +80,24 @@ def mount_static(app) -> None:
     app.mount("/static/admin", GuardedStatic(WEB_DIR / "admin", loopback=False), name="static-admin")
 
 
-@router.get("/", dependencies=[Depends(auth.require_loopback)])
+@router.get("/", dependencies=[Depends(auth.require_display_viewer)])
 async def index() -> FileResponse:
     return FileResponse(WEB_DIR / "display" / "index.html", headers=REVALIDATE)
+
+
+def _ws_allowed(ws: WebSocket) -> bool:
+    """The kiosk on the Pi (loopback peer, Host and Origin), or a logged-in admin whose
+    browser Origin matches the Host it connected to (blocks other sites riding the cookie)."""
+    origin = ws.headers.get("origin")
+    if auth.is_loopback_request(ws) and auth.is_allowed_display_origin(origin):
+        return True
+    return auth.has_admin_session(ws) and auth.is_same_origin(origin, ws.headers.get("host"))
 
 
 @router.websocket("/ws")
 async def display_ws(ws: WebSocket) -> None:
     await ws.accept()
-    if (
-        not ws.client
-        or ws.client.host not in auth.LOOPBACK_HOSTS
-        or not auth.is_loopback_host_header(ws.headers.get("host"))
-        or not auth.is_allowed_display_origin(ws.headers.get("origin"))
-    ):
+    if not _ws_allowed(ws):
         await ws.close(code=WS_FORBIDDEN)
         return
     hub = ws.app.state.hub
@@ -131,15 +135,7 @@ _MEDIA_RE = re.compile(r"[0-9a-f]{32}(\.bg|\.thumb)?\.jpg")
 
 @router.get("/media/{file}")
 async def media(file: str, request: Request) -> FileResponse:
-    client = request.client
-    loopback = (
-        client is not None
-        and client.host in auth.LOOPBACK_HOSTS
-        and auth.is_loopback_host_header(request.headers.get("host"))
-    )
-    if not loopback and not auth.valid_session_cookie(
-        request.app.state.store.secrets.session_secret, request.cookies.get(auth.COOKIE_NAME)
-    ):
+    if not auth.is_loopback_request(request) and not auth.has_admin_session(request):
         raise HTTPException(status_code=403, detail="forbidden")
     if not _MEDIA_RE.fullmatch(file):
         raise HTTPException(status_code=404, detail="not found")

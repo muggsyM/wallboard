@@ -35,6 +35,12 @@ function parseDevHash(hash) {
 }
 const DEV = parseDevHash(location.hash);
 
+// Opened from another device (a logged-in admin's laptop or phone), not the Pi's kiosk:
+// display.css then keeps the board at portrait 9:16 and shows the cursor.
+if (!["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)) {
+  document.documentElement.classList.add("remote");
+}
+
 const fmt = { fmtTime, fmtLongDate, fmtWeekdayShort, fmtMonthYear, fmtShortDayMonth, fmtNumber };
 const store = createStore({ url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws` });
 const photo = createPhoto();

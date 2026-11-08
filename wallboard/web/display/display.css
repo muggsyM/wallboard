@@ -39,6 +39,16 @@ html, body {
   background: linear-gradient(170deg, #1d2433, #11141b);
 }
 
+/* Viewed from another device (an admin's laptop or phone): keep the portrait board
+   centred at 9:16 instead of stretching it across a landscape window, and show the
+   mouse cursor. The kiosk on the Pi never gets this class. */
+html.remote, html.remote * { cursor: auto; }
+html.remote #app {
+  margin: auto;
+  width: min(100vw, calc(100vh * 9 / 16));
+  height: min(100vh, calc(100vw * 16 / 9));
+}
+
 /* ---------- photo background ---------- */
 .wb-bg { position: absolute; inset: 0; }
 .wb-bg-layer {
