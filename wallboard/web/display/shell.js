@@ -1,4 +1,4 @@
-// Display shell: wires the store, i18n, photo background, page rotation, gestures,
+// Display shell: wires the store, i18n, the photo sequence, page rotation, gestures,
 // page dots, offline dimming and night mode. Pages are modules from pages/registry.js
 // following the contract { type, titleKey, settings, mount(el, ctx) -> {update, destroy} }.
 //
@@ -49,7 +49,6 @@ const app = document.getElementById("app");
 const stage = document.getElementById("stage");
 const dots = document.getElementById("dots");
 const nightEl = document.getElementById("night");
-app.prepend(photo.backgroundEl());
 
 let rotator = null;
 let current = null; // {el, inst}
@@ -184,7 +183,6 @@ function go(direction, now) {
   if (!rotator || rotator.pages.length < 2) return;
   if (direction === "prev") rotator.prev(now);
   else rotator.next(now);
-  photo.advanceBackground();
   mountCurrent(true);
 }
 

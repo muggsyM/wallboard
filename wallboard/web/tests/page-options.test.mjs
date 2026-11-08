@@ -26,3 +26,15 @@ test("module without settings, missing page ref", () => {
   assert.deepEqual(pageOptions({}, { options: { a: 1 } }), { a: 1 });
   assert.deepEqual(pageOptions({ settings: [] }, null), {});
 });
+
+test("clampSetting rounds, clamps and falls back", async () => {
+  const { clampSetting } = await import("../display/lib/page-options.js");
+  assert.equal(clampSetting(2, 4, 120, 10), 4);
+  assert.equal(clampSetting(500, 4, 120, 10), 120);
+  assert.equal(clampSetting("30", 4, 120, 10), 30);
+  assert.equal(clampSetting(7.5, 4, 120, 10), 8);
+  assert.equal(clampSetting("", 4, 120, 10), 10);
+  assert.equal(clampSetting(null, 4, 120, 10), 10);
+  assert.equal(clampSetting(undefined, 4, 120, 10), 10);
+  assert.equal(clampSetting("abc", 4, 120, 10), 10);
+});

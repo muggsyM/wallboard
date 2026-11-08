@@ -266,6 +266,22 @@ def test_fonts_and_icons_are_local(app):
     assert len(re.findall(r'href="/static/shared/vendor/', index)) == 2
 
 
+def test_chalkboard_background_is_served(app):
+    """The board background is the static chalk texture referenced from display.css."""
+    import io
+
+    from PIL import Image
+
+    c = LocalClient(app, client=("127.0.0.1", 1))
+    css = c.get("/static/display/display.css").text
+    assert "url(chalk.jpg)" in css
+    r = c.get("/static/display/chalk.jpg")
+    assert r.status_code == 200
+    assert len(r.content) < 250 * 1024
+    img = Image.open(io.BytesIO(r.content))
+    assert (img.format, img.size) == ("JPEG", (1080, 1920))
+
+
 def test_ws_rejects_foreign_origin(app):
     with LocalClient(app, client=("127.0.0.1", 1)) as c:
         with c.websocket_connect("/ws", headers={"origin": "http://evil.example"}) as ws:

@@ -1,11 +1,11 @@
-// Month: a rolling Monday-first grid of `weeks` weeks (4..6, default 5) starting on the
+// Month: a rolling Monday-first grid of `weeks` weeks (4..6, default 4) starting on the
 // Monday of the current week, filling the page below the header (subtitle: the month(s)
-// covered) and a colour legend (every configured member: colour dot + name). Each day shows
-// its number (today: filled blue on a blue ring; the 1st of a month and the first cell add
-// the short month name), the forecast icon when there is one, the Czech holiday name (pink),
-// and up to `max_events_per_day` entries (default 4): a small time line above a title of up
-// to 3 lines, the member colour on the left edge; all-day events solid on one line. Past
-// days are faded to 50 %, weekends tinted. Look: mockups/month-v2.html.
+// covered). Open grid on the chalkboard (mockup variant J): each day shows a big centred
+// number (today: in a red circle; the 1st of a month and the first cell add the short month
+// name, except on today's circle), the Czech holiday name (pink) and up to
+// `max_events_per_day` entries (default 4) as solid member-colour strips: a small time line
+// above a title of up to 3 lines; all-day events on one line. Past days are dimmed, weekend
+// numbers tinted. No legend and no forecast icons (the header has the current weather).
 //
 // Multi-day all-day events are continuous bars (lib/layout.js assignLanes + barPiece): each
 // bar keeps one lane (vertical slot) across its week row, lanes come first in a cell (empty
@@ -15,25 +15,18 @@
 // title. Bars are always drawn; the per-day limit and the overflow trim apply to the other
 // entries (pickVisible: past timed events go first, then from the end) plus "+N more".
 //
-// The grid is rebuilt only when the calendar/weather payload, members, language, zone or
-// local minute changes (checked on every store update and every 20 s).
+// The grid is rebuilt only when the calendar payload, language, zone or local minute
+// changes (checked on every store update and every 20 s).
 import { renderHeader, safeColor } from "../header.js";
 import { t, getLanguage, fmtMonthRange, fmtWeekdayShort, fmtDayMonthShort } from "../../shared/i18n.js";
-import { WEATHER_ICONS } from "../../shared/ha-format.js";
+import { clampSetting } from "../lib/page-options.js";
 import { localDate, noonOf, bucket, isPast, pickVisible, weekGrid, assignLanes, barPiece } from "../lib/layout.js";
 import { readableText } from "../lib/color.js";
 import { chipTime } from "./week.js";
 
 const MINUTE_CHECK_MS = 20000;
 const DEFAULT_MAX = 4;
-const DEFAULT_WEEKS = 5;
-
-// Settings come from config (number, possibly a string): rounded and clamped to lo..hi.
-function clampSetting(v, lo, hi, fallback) {
-  const n = Math.round(Number(v));
-  if (v === null || v === undefined || v === "" || !Number.isFinite(n)) return fallback;
-  return Math.min(hi, Math.max(lo, n));
-}
+const DEFAULT_WEEKS = 4;
 export const clampMaxEvents = (v) => clampSetting(v, 1, 6, DEFAULT_MAX);
 export const clampWeeks = (v) => clampSetting(v, 4, 6, DEFAULT_WEEKS);
 
@@ -48,11 +41,6 @@ const isWeekend = (iso) => {
   const d = new Date(`${iso}T00:00:00Z`).getUTCDay();
   return d === 0 || d === 6;
 };
-
-function weatherIcon(weather, iso) {
-  const d = (weather?.daily || []).find((x) => x?.date === iso);
-  return d ? WEATHER_ICONS[d.condition] || "mdi-weather-partly-cloudy" : null;
-}
 
 function solid(node, ev) {
   const color = safeColor(ev.color);
@@ -70,14 +58,10 @@ function bar(ev, iso, column) {
 
 function entry(ev, iso, tz, now, today) {
   const e = el("div", "wb-me");
-  if (ev.all_day) {
-    e.classList.add("all");
-    solid(e, ev);
-  } else {
-    e.style.borderLeftColor = safeColor(ev.color);
-    // Earlier days are faded as a whole; only today's finished events fade on their own.
-    if (iso === today && isPast(ev, now, tz)) e.classList.add("past");
-  }
+  solid(e, ev);
+  if (ev.all_day) e.classList.add("all");
+  // Earlier days are dimmed as a whole; only today's finished events fade on their own.
+  else if (iso === today && isPast(ev, now, tz)) e.classList.add("past");
   const time = chipTime(ev, iso, tz);
   if (time) e.append(el("b", "", time));
   // Solid all-day entries are one nowrap line; timed titles clamp to 3 lines.
@@ -89,23 +73,19 @@ const overflows = (box) => box.scrollHeight > box.clientHeight + 1;
 
 // One day cell. `lanes` = the week row's Map event -> lane.
 function dayCell(d) {
-  const { iso, column, first, today, events, lanes, holiday, icon, cap, tz, now } = d;
+  const { iso, column, first, today, events, lanes, holiday, cap, tz, now } = d;
   const c = el("div", "wb-mc");
   if (iso < today) c.classList.add("past");
-  const newMonth = iso.endsWith("-01");
-  if (newMonth) c.classList.add("m1");
   if (isWeekend(iso)) c.classList.add("we");
   if (iso === today) c.classList.add("today");
 
+  // The number alone (today's sits in the circle); the first cell and the 1st of a month
+  // add the short month name beside it ("2 lis"), but not in today's circle.
   const head = el("div", "wb-mc-n");
-  const num = el("span", "", String(Number(iso.slice(8))));
-  if (newMonth || first) {
-    const { day, month } = fmtDayMonthShort(noonOf(iso, tz));
-    num.textContent = day;
-    num.append(el("small", "wb-mc-m", month));
+  head.append(el("span", "", String(Number(iso.slice(8)))));
+  if ((iso.endsWith("-01") || first) && iso !== today) {
+    head.append(el("small", "wb-mc-m", fmtDayMonthShort(noonOf(iso, tz)).month));
   }
-  head.append(num);
-  if (icon) head.append(el("i", `mdi ${icon}`));
 
   const barsHere = events.filter((ev) => lanes.has(ev));
   const others = events.filter((ev) => !lanes.has(ev));
@@ -141,9 +121,8 @@ export default {
     { key: "max_events_per_day", type: "number", labelKey: "max_events_per_day", default: DEFAULT_MAX, min: 1, max: 6 },
   ],
   mount(root, ctx) {
-    root.innerHTML = `<div class="wb-page-header"></div><div class="wb-legend"></div><div class="wb-month"></div>`;
+    root.innerHTML = `<div class="wb-page-header"></div><div class="wb-month"></div>`;
     const header = root.querySelector(".wb-page-header");
-    const legend = root.querySelector(".wb-legend");
     const grid = root.querySelector(".wb-month");
     const cap = clampMaxEvents(ctx.options?.max_events_per_day);
     const weeks = clampWeeks(ctx.options?.weeks);
@@ -152,20 +131,7 @@ export default {
     let alive = true;
 
     const same = (a, b) =>
-      a && b && a.tz === b.tz && a.minute === b.minute && a.calendar === b.calendar && a.weather === b.weather &&
-      a.lang === b.lang && a.members === b.members;
-
-    function renderLegend(members) {
-      legend.replaceChildren(
-        ...(members || []).map((m) => {
-          const item = el("span", "wb-legend-i");
-          const dot = el("i");
-          dot.style.background = safeColor(m.color);
-          item.append(dot, m.name ?? "");
-          return item;
-        }),
-      );
-    }
+      a && b && a.tz === b.tz && a.minute === b.minute && a.calendar === b.calendar && a.lang === b.lang;
 
     function render(state, force = false) {
       const now = Date.now();
@@ -174,13 +140,9 @@ export default {
       const days = weekGrid(today, weeks);
       const subtitle = fmtMonthRange(noonOf(days[0], tz), noonOf(days[days.length - 1], tz));
       renderHeader(header, state, { titleKey: "month", subtitle });
-      const key = {
-        tz, minute: Math.floor(now / 60000), calendar: state.calendar, weather: state.weather, lang: getLanguage(),
-        members: state.config?.members,
-      };
+      const key = { tz, minute: Math.floor(now / 60000), calendar: state.calendar, lang: getLanguage() };
       if (!force && same(key, last)) return;
       last = key;
-      renderLegend(key.members);
 
       const byDay = bucket(state.calendar?.events || [], days[0], days.length, tz);
       const holidays = state.calendar?.holidays || {};
@@ -192,8 +154,7 @@ export default {
         week.forEach((iso, column) => {
           cells.push(dayCell({
             iso, column, first: w === 0 && column === 0, today, events: byDay.get(iso), lanes,
-            holiday: typeof holidays[iso] === "string" ? holidays[iso] : "", icon: weatherIcon(state.weather, iso),
-            cap, tz, now,
+            holiday: typeof holidays[iso] === "string" ? holidays[iso] : "", cap, tz, now,
           }));
         });
       }
