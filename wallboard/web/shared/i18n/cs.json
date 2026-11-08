@@ -255,5 +255,11 @@
   "admin_photos_save_failed": "Neuloženo – změna byla vrácena",
   "admin_photos_delete_failed": "Fotku se nepodařilo smazat",
   "admin_photos_load_failed": "Fotky se nepodařilo načíst: {msg}",
-  "admin_photos_processing": "Zpracovává se…"
+  "admin_photos_processing": "Zpracovává se…",
+  "day_events_one": "1 akce",
+  "day_events_few": "{n} akce",
+  "day_events_other": "{n} akcí",
+  "day_no_events": "Žádné akce",
+  "day_close": "Zavřít",
+  "day_hint": "Klepnutím mimo okno nebo na × zavřete · samo se zavře za 30 s"
 }

@@ -61,6 +61,7 @@ let gesture = null;
 let loadedBuild = null; // server build id this page was loaded with
 let lastMinute = null; // local minute of day at the previous tick (nightly reload)
 let reloading = false;
+const holds = new Set(); // {owner}: open ctx.hold() tokens; owner = the page's element
 
 // Reload only when the server answers, so a reload never leaves a blank error page on the
 // wall (e.g. the server is mid-restart). A failed check is simply tried again next time.
@@ -127,6 +128,19 @@ function holdRotation(ms) {
   rotator?.touch(Date.now(), ms);
 }
 
+// ctx.hold() -> release(): an explicit hold for UI that must stay up for an open-ended time
+// (the Month day window). While any hold is open, rotation does not advance and night mode
+// does not start; each tick counts as a touch, so after release() the usual touch pause
+// (touch_pause_seconds) runs before rotation or night resume. release() is idempotent, and
+// the shell drops a page's holds when it destroys that page, so a hold can never leak.
+function makeHold(owner) {
+  return () => {
+    const token = { owner };
+    holds.add(token);
+    return () => holds.delete(token);
+  };
+}
+
 // ctx.canAct(): false for a view-only visitor (the server's "viewer" message); tiles then
 // ignore taps. Asked live, so it follows the message that arrives just after the snapshot.
 const canAct = () => store.get().viewer?.can_act !== false;
@@ -145,7 +159,9 @@ function mountCurrent(animate) {
     let inst;
     try {
       // ctx.options: the module's settings defaults overlaid with this page's config options.
-      inst = mod.mount(el, { store, t, fmt, photo, options: pageOptions(mod, page), holdRotation, canAct });
+      inst = mod.mount(el, {
+        store, t, fmt, photo, options: pageOptions(mod, page), holdRotation, hold: makeHold(el), canAct,
+      });
     } catch (err) {
       console.error(`wallboard: page "${page.type}" failed to mount`, err);
       inst = { update() {}, destroy() {} };
@@ -162,6 +178,7 @@ function mountCurrent(animate) {
         console.error("wallboard: page destroy failed", err);
       }
       old.el.remove();
+      for (const h of holds) if (h.owner === old.el) holds.delete(h);
     };
     if (animate) {
       old.el.classList.add("leaving");
@@ -204,6 +221,11 @@ function tick() {
   const minute = localMinutes(now, config.timezone);
   if (crossedMinute(lastMinute, minute, nightlyReloadMinute(config.night))) safeReload("nightly");
   lastMinute = minute;
+  if (holds.size) {
+    // A page holds the board (see makeHold): keep it awake and on this page.
+    wakeUntil = Math.max(wakeUntil, now + pauseSeconds(config) * 1000);
+    rotator.touch(now);
+  }
   setNight(now >= wakeUntil && isNight(now, config.night, config.timezone));
   if (nightOn) return;
   if (!DEV.norotate && rotator.tick(now)) go("next", now);

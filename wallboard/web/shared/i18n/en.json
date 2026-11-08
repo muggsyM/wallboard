@@ -255,5 +255,11 @@
   "admin_photos_save_failed": "Not saved – the change was undone",
   "admin_photos_delete_failed": "The photo could not be deleted",
   "admin_photos_load_failed": "Could not load the photos: {msg}",
-  "admin_photos_processing": "Processing…"
+  "admin_photos_processing": "Processing…",
+  "day_events_one": "1 event",
+  "day_events_few": "{n} events",
+  "day_events_other": "{n} events",
+  "day_no_events": "No events",
+  "day_close": "Close",
+  "day_hint": "Tap outside or on × to close · closes by itself after 30 s"
 }

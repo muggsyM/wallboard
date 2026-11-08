@@ -17,6 +17,8 @@
 //   weekGrid(todayISO, weeks)         -> 7*weeks iso dates from the Monday of today's week
 //   assignLanes(weekDays, events)     -> Map event -> lane for multi-day all-day bars in a week row
 //   barPiece(event, iso, column)      -> how one day's piece of such a bar is drawn
+//   mergeSameAllDay(events)           -> one day's events with identical single-day all-day
+//                                        titles of several members folded into one entry
 
 const FALLBACK_TZ = "Europe/Prague";
 const dateFormatters = new Map();
@@ -217,4 +219,38 @@ export function barPiece(event, iso, column) {
     extL: continuesLeft && column > 0,
     extR: continuesRight && column < 6,
   };
+}
+
+// One day's (sorted) events with identical single-day all-day entries folded together:
+// "Školka" for two kids becomes one entry. Entries are grouped by trimmed title; a group
+// with two or more members becomes a copy of its first event plus
+//   members: [{id, color}] (distinct member_ids, first-seen order)
+//   events:  the folded source events
+// at the first event's position. A group of one member (the same event twice, e.g. from
+// two calendars) keeps only its first event. Timed and multi-day events, and single
+// entries, are returned as the same objects, so Maps keyed by event (lanes) still work.
+export function mergeSameAllDay(events) {
+  const groups = new Map(); // title -> [events]
+  const isSingleAllDay = (ev) => ev.all_day && daysOf(ev).length === 1;
+  for (const ev of events || []) {
+    if (!isSingleAllDay(ev)) continue;
+    const key = String(ev.title ?? "").trim();
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(ev);
+  }
+  const out = [];
+  for (const ev of events || []) {
+    if (!isSingleAllDay(ev)) {
+      out.push(ev);
+      continue;
+    }
+    const group = groups.get(String(ev.title ?? "").trim());
+    if (group[0] !== ev) continue; // folded into the first one
+    const members = [];
+    for (const g of group) {
+      if (!members.some((m) => m.id === g.member_id)) members.push({ id: g.member_id, color: g.color });
+    }
+    out.push(members.length > 1 ? { ...ev, members, events: group } : ev);
+  }
+  return out;
 }
