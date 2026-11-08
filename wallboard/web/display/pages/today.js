@@ -153,8 +153,8 @@ export default {
   settings: [],
   mount(root, ctx) {
     root.innerHTML = `<div class="wb-page-header"></div>
-      <div class="wb-photo" hidden><img decoding="async" alt=""><div class="wb-caption"><i class="mdi mdi-image-outline"></i><span></span></div></div>
-      <div class="wb-today"><div class="wb-today-top"><span class="wb-lbl"></span><div class="wb-alldays"></div></div><div class="wb-tl"></div></div>
+      <div class="wb-pt"><div class="wb-photo" hidden><img decoding="async" alt=""><div class="wb-caption"><i class="mdi mdi-image-outline"></i><span></span></div></div>
+      <div class="wb-today"><div class="wb-today-top"><span class="wb-lbl"></span><div class="wb-alldays"></div></div><div class="wb-tl"></div></div></div>
       <div class="wb-cards3"></div>
       <div class="wb-tiles" hidden></div>`;
     const header = root.querySelector(".wb-page-header");
