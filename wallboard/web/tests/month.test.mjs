@@ -1,14 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { assignLanes, barPiece, monthGrid } from "../display/lib/layout.js";
-import { clampMaxEvents } from "../display/pages/month.js";
+import { assignLanes, barPiece, weekGrid } from "../display/lib/layout.js";
+import { clampMaxEvents, clampWeeks } from "../display/pages/month.js";
 import month from "../display/pages/month.js";
 import { pageOptions } from "../display/lib/page-options.js";
 
 const allDay = (id, start, end) => ({ id, title: id, location: null, start, end, all_day: true, member_id: "m", color: "#4f8cff" });
 const timed = (id, start, end) => ({ id, title: id, location: null, start, end, all_day: false, member_id: "m", color: "#4f8cff" });
 // Week of Mon 16 – Sun 22 Nov 2026.
-const WEEK = monthGrid("2026-11-07").slice(21, 28);
+const WEEK = weekGrid("2026-11-07", 4).slice(14, 21);
 
 test("week fixture is Monday to Sunday", () => {
   assert.deepEqual([WEEK[0], WEEK[6]], ["2026-11-16", "2026-11-22"]);
@@ -56,13 +56,44 @@ test("barPiece: breaks at the week boundary and repeats the title on Monday", ()
   assert.deepEqual(barPiece(trip, "2026-11-17", 1), { title: false, roundL: false, roundR: true, extL: true, extR: false });
 });
 
-test("max_events_per_day setting: default 3, clamped to 1..6", () => {
-  assert.deepEqual(month.settings, [{ key: "max_events_per_day", type: "number", labelKey: "max_events_per_day", default: 3 }]);
-  assert.equal(clampMaxEvents(pageOptions(month, {}).max_events_per_day), 3);
+test("bars crossing the 1st of a month stay one row piece in the rolling grid", () => {
+  // Today Thu 26 Nov 2026, 5 weeks: row 1 is Mon 30 Nov - Sun 6 Dec.
+  const row = weekGrid("2026-11-26", 5).slice(7, 14);
+  assert.deepEqual([row[0], row[6]], ["2026-11-30", "2026-12-06"]);
+  const trip = allDay("trip", "2026-11-30", "2026-12-03"); // Mon 30 Nov - Wed 2 Dec
+  const fair = allDay("fair", "2026-12-01", "2026-12-04"); // Tue 1 - Thu 3 Dec
+  const lanes = assignLanes(row, [fair, trip]);
+  assert.equal(lanes.get(trip), 0);
+  assert.equal(lanes.get(fair), 1);
+  assert.deepEqual(barPiece(trip, "2026-12-01", 1), { title: false, roundL: false, roundR: false, extL: true, extR: true });
+  assert.deepEqual(barPiece(fair, "2026-12-01", 1), { title: true, roundL: true, roundR: false, extL: false, extR: true });
+});
+
+test("settings: weeks (default 5, 4..6) and max_events_per_day (default 4, 1..6)", () => {
+  assert.deepEqual(month.settings, [
+    { key: "weeks", type: "number", labelKey: "weeks_shown", default: 5, min: 4, max: 6 },
+    { key: "max_events_per_day", type: "number", labelKey: "max_events_per_day", default: 4, min: 1, max: 6 },
+  ]);
+  const opts = pageOptions(month, {});
+  assert.equal(clampWeeks(opts.weeks), 5);
+  assert.equal(clampMaxEvents(opts.max_events_per_day), 4);
+});
+
+test("max_events_per_day is clamped to 1..6", () => {
   assert.equal(clampMaxEvents(0), 1);
   assert.equal(clampMaxEvents(9), 6);
   assert.equal(clampMaxEvents("4"), 4);
   assert.equal(clampMaxEvents(2.6), 3);
-  assert.equal(clampMaxEvents("x"), 3);
-  assert.equal(clampMaxEvents(undefined), 3);
+  assert.equal(clampMaxEvents("x"), 4);
+  assert.equal(clampMaxEvents(undefined), 4);
+});
+
+test("weeks is clamped to 4..6", () => {
+  assert.equal(clampWeeks(1), 4);
+  assert.equal(clampWeeks(9), 6);
+  assert.equal(clampWeeks("6"), 6);
+  assert.equal(clampWeeks(4.4), 4);
+  assert.equal(clampWeeks(""), 5);
+  assert.equal(clampWeeks(null), 5);
+  assert.equal(clampWeeks("x"), 5);
 });

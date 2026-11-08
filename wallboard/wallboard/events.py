@@ -95,12 +95,18 @@ def bucket_by_day(
 
 
 def display_range(today: date) -> tuple[date, date]:
-    """Inclusive (Monday on/before the 1st, max(Sunday on/after month end, today+6))."""
+    """Inclusive (Monday on/before the 1st, max(Sunday on/after month end, end of the Month
+    page's rolling grid at its largest: Monday of today's week + 6 weeks - 1 day)).
+
+    The start stays at the month's first week because the Today and Week pages and the
+    cache still want the earlier days of the month; the end covers the rolling grid (which
+    also covers today + 6)."""
     month_first = today.replace(day=1)
     first = month_first - timedelta(days=month_first.weekday())
     month_last = today.replace(day=calendar.monthrange(today.year, today.month)[1])
     last = month_last + timedelta(days=6 - month_last.weekday())
-    return first, max(last, today + timedelta(days=6))
+    grid_last = today - timedelta(days=today.weekday()) + timedelta(days=6 * 7 - 1)
+    return first, max(last, grid_last)
 
 
 def to_json(ev: Event) -> dict:

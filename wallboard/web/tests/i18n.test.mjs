@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   tn, setStrings, setLanguage, getLanguage, loadLanguage, t, setTimezone,
-  fmtTime, fmtLongDate, fmtWeekdayShort, fmtMonthYear, fmtShortDayMonth, fmtNumber,
+  fmtTime, fmtLongDate, fmtWeekdayShort, fmtMonthYear, fmtShortDayMonth, fmtNumber, fmtDayMonthShort, fmtMonthRange,
 } from "../shared/i18n.js";
 
 const load = (n) => JSON.parse(readFileSync(new URL(`../shared/i18n/${n}.json`, import.meta.url), "utf8"));
@@ -54,6 +54,25 @@ test("formatters in en", () => {
   assert.equal(fmtMonthYear(d), "November 2026");
   assert.equal(fmtShortDayMonth(d), "7/11");
   assert.equal(fmtNumber(21.5), "21.5");
+});
+
+test("fmtDayMonthShort and fmtMonthRange", () => {
+  const dec1 = new Date("2026-12-01T12:00:00+01:00");
+  const nov2 = new Date("2026-11-02T12:00:00+01:00");
+  const nov29 = new Date("2026-11-29T12:00:00+01:00");
+  const dec6 = new Date("2026-12-06T12:00:00+01:00");
+  const dec28 = new Date("2026-12-28T12:00:00+01:00");
+  const jan31 = new Date("2027-01-31T12:00:00+01:00");
+  setLanguage("cs");
+  assert.deepEqual(fmtDayMonthShort(dec1), { day: "1.", month: "pro" });
+  assert.equal(fmtMonthRange(nov2, nov29), "listopad 2026");
+  assert.equal(fmtMonthRange(nov2, dec6), "listopad – prosinec 2026");
+  assert.equal(fmtMonthRange(dec28, jan31), "prosinec 2026 – leden 2027");
+  setLanguage("en");
+  assert.deepEqual(fmtDayMonthShort(dec1), { day: "1", month: "Dec" });
+  assert.equal(fmtMonthRange(nov2, nov29), "November 2026");
+  assert.equal(fmtMonthRange(nov2, dec6), "November – December 2026");
+  assert.equal(fmtMonthRange(dec28, jan31), "December 2026 – January 2027");
 });
 
 test("timezone is honoured, midnight is 00 not 24", () => {

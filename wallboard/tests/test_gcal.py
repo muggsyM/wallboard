@@ -105,7 +105,7 @@ async def test_merges_accounts_and_colors(env):
     svc = env.service()
     await svc.poll_once()
     p = env.published()
-    assert (p["range_start"], p["range_end"]) == ("2026-10-26", "2026-12-06")
+    assert (p["range_start"], p["range_end"]) == ("2026-10-26", "2026-12-13")
     assert p["holidays"] == {
         "2026-10-28": "Den vzniku samostatného československého státu",
         "2026-11-17": "Den boje za svobodu a demokracii",
@@ -147,13 +147,13 @@ async def test_time_range_is_prague_local_midnight(env):
     await svc.poll_once()
     q = route.calls[0].request.url.params
     assert q["timeMin"] == "2026-10-26T00:00:00+01:00"
-    assert q["timeMax"] == "2026-12-07T00:00:00+01:00"
+    assert q["timeMax"] == "2026-12-14T00:00:00+01:00"
     # summer: DST offset +02:00
     env.clock.t = datetime(2026, 7, 15, 10, 0, tzinfo=timezone.utc)
     await svc.poll_once()
     q = route.calls[-1].request.url.params
     assert q["timeMin"] == "2026-06-29T00:00:00+02:00"
-    assert q["timeMax"] == "2026-08-03T00:00:00+02:00"
+    assert q["timeMax"] == "2026-08-24T00:00:00+02:00"
     await svc.stop()
 
 
@@ -570,7 +570,7 @@ async def test_holidays_span_two_years(env):
     svc = env.service()
     await svc.poll_once()
     p = env.published()
-    assert (p["range_start"], p["range_end"]) == ("2026-11-30", "2027-01-05")
+    assert (p["range_start"], p["range_end"]) == ("2026-11-30", "2027-02-07")
     assert list(p["holidays"]) == ["2026-12-24", "2026-12-25", "2026-12-26", "2027-01-01"]
     assert p["holidays"]["2027-01-01"] == "Den obnovy samostatného českého státu, Nový rok"
     await svc.stop()

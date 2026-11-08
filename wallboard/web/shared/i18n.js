@@ -69,6 +69,9 @@ const KINDS = {
   weekdayShort: { weekday: "short" },
   monthYear: { month: "long", year: "numeric" },
   dayMonth: { day: "numeric", month: "numeric" },
+  monthLong: { month: "long" },
+  monthShort: { month: "short" },
+  day: { day: "numeric" },
 };
 
 function formatter(kind) {
@@ -95,6 +98,24 @@ export function fmtShortDayMonth(date) {
   const day = Number(parts.find((p) => p.type === "day").value);
   const month = Number(parts.find((p) => p.type === "month").value);
   return lang === "cs" ? `${day}. ${month}.` : `${day}/${month}`;
+}
+
+// Day number with the short month name for the Month grid's month changes:
+// cs {day: "1.", month: "pro"}, en {day: "1", month: "Dec"}.
+export function fmtDayMonthShort(date) {
+  const day = Number(formatter("day").formatToParts(date).find((p) => p.type === "day").value);
+  return { day: lang === "cs" ? `${day}.` : String(day), month: plain(formatter("monthShort").format(date)) };
+}
+
+// The month(s) from `first` to `last` (Dates): "listopad 2026", "listopad – prosinec 2026",
+// "prosinec 2026 – leden 2027" (both years when the range crosses a year).
+export function fmtMonthRange(first, last) {
+  const a = fmtMonthYear(first);
+  const b = fmtMonthYear(last);
+  if (a === b) return a;
+  const year = (d) => formatter("monthYear").formatToParts(d).find((p) => p.type === "year").value;
+  if (year(first) === year(last)) return `${plain(formatter("monthLong").format(first))} – ${b}`;
+  return `${a} – ${b}`;
 }
 
 // Locale-aware number; returns null when raw is not numeric.

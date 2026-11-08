@@ -68,7 +68,7 @@ async def test_service_publishes_dev_calendar(data_dir, tmp_path, caplog):
     await svc.start()
     await svc.stop()
     cal = hub.snapshot()["calendar"]
-    assert (cal["range_start"], cal["range_end"]) == ("2026-10-26", "2026-12-06")
+    assert (cal["range_start"], cal["range_end"]) == ("2026-10-26", "2026-12-13")
     assert [(e["title"], e["start"]) for e in cal["events"]] == [("Swim", "2026-11-08T10:00:00+01:00")]
     assert cal["holidays"] == {
         "2026-10-28": "Den vzniku samostatného československého státu",

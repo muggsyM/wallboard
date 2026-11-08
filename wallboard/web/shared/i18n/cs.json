@@ -67,6 +67,7 @@
   "weather_windy": "Větrno",
   "weather_windy_variant": "Větrno a oblačno",
   "max_events_per_day": "Max. událostí za den",
+  "weeks_shown": "Počet týdnů",
   "rain_today": "dnes déšť",
   "rain_tomorrow": "zítra déšť",
   "rain_on": "déšť {day}",

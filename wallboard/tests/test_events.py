@@ -159,17 +159,36 @@ def test_multi_day_timed_sorts_by_real_start_each_day():
 
 
 def test_display_range_nov_2026():
-    assert display_range(date(2026, 11, 7)) == (date(2026, 10, 26), date(2026, 12, 6))
+    # Saturday; its week starts Mon Nov 2 -> 6 weeks end Sun Dec 13 (month end: Dec 6).
+    assert display_range(date(2026, 11, 7)) == (date(2026, 10, 26), date(2026, 12, 13))
 
 
 def test_display_range_end_of_month():
-    assert display_range(date(2026, 11, 28)) == (date(2026, 10, 26), date(2026, 12, 6))
+    # Week of Mon Nov 23 -> 6 weeks end Sun Jan 3 2027, across the year.
+    assert display_range(date(2026, 11, 28)) == (date(2026, 10, 26), date(2027, 1, 3))
 
 
-def test_display_range_today_plus_six_wins():
-    # Feb 2026 ends on Saturday the 28th -> Sunday Mar 1; today+6 = Mar 6 wins.
-    assert display_range(date(2026, 2, 28)) == (date(2026, 1, 26), date(2026, 3, 6))
+def test_display_range_rolling_grid_wins_over_month_end():
+    # Feb 2026 ends on Saturday the 28th -> Sunday Mar 1; week of Mon Feb 23 + 6 weeks = Apr 5.
+    assert display_range(date(2026, 2, 28)) == (date(2026, 1, 26), date(2026, 4, 5))
 
 
 def test_display_range_month_starting_monday():
-    assert display_range(date(2026, 6, 15)) == (date(2026, 6, 1), date(2026, 7, 5))
+    # Monday Jun 15 is its own week start -> Sun Jul 26.
+    assert display_range(date(2026, 6, 15)) == (date(2026, 6, 1), date(2026, 7, 26))
+
+
+def test_display_range_first_day_on_sunday():
+    # Nov 1 2026 is a Sunday: start Mon Oct 26; its week is Oct 26 - Nov 1 -> 6 weeks end Dec 6,
+    # equal to the Sunday after month end.
+    assert display_range(date(2026, 11, 1)) == (date(2026, 10, 26), date(2026, 12, 6))
+
+
+def test_display_range_covers_the_largest_rolling_grid_and_today_plus_six():
+    d = date(2026, 1, 1)
+    while d < date(2027, 1, 1):
+        first, last = display_range(d)
+        monday = d - timedelta(days=d.weekday())
+        assert first <= monday and last >= monday + timedelta(days=41) >= d + timedelta(days=6)
+        assert first.weekday() == 0 and last.weekday() == 6
+        d += timedelta(days=1)

@@ -253,7 +253,7 @@ html.remote #app {
   min-height: 0;
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  grid-template-rows: auto repeat(6, minmax(0, 1fr));
+  grid-template-rows: auto repeat(var(--wb-mweeks, 5), minmax(0, 1fr));
   gap: var(--wb-mgap);
 }
 .wb-mh {
@@ -279,8 +279,9 @@ html.remote #app {
   overflow: clip;
   overflow-clip-margin: calc(var(--wb-mgap) / 2);
 }
-.wb-mc.out { opacity: .28; }
 .wb-mc.past { opacity: .5; }
+/* The 1st of a month: a thin light top edge marks the month change. */
+.wb-mc.m1 { box-shadow: inset 0 .35cqw 0 rgba(255, 255, 255, .45); }
 .wb-mc.we { background: rgba(255, 255, 255, .035); }
 .wb-mc.we .wb-mc-n { color: #ffc2cc; }
 .wb-mc.today { background: rgba(79, 140, 255, .24); box-shadow: inset 0 0 0 .45cqw #4f8cff; }
@@ -295,6 +296,8 @@ html.remote #app {
   align-items: center;
 }
 .wb-mc.today .wb-mc-n span { background: #4f8cff; border-radius: 1cqw; padding: 0 1cqw; color: #fff; }
+.wb-mc-m { font-size: .62em; font-weight: 500; opacity: .75; margin-left: .5cqw; }
+.wb-mc.today .wb-mc-m { opacity: .9; }
 .wb-mc-n .mdi { font-size: 2.6cqw; line-height: 1; color: var(--wb-accent-sun); font-weight: 400; }
 .wb-mc-hol {
   flex: none;
@@ -312,20 +315,24 @@ html.remote #app {
 .wb-me {
   flex: none;
   font-family: "Roboto Condensed", "Outfit", sans-serif;
-  font-size: 2.15cqw;
+  font-size: 1.95cqw;
   line-height: 1.18;
   padding: .25cqw .5cqw;
   border-left: .7cqw solid rgba(255, 255, 255, .4);
   background: rgba(255, 255, 255, .07);
   border-radius: .4cqw;
+  overflow: hidden;
+}
+/* Timed entries: the time on its own small line, then the title clamped to 3 lines. */
+.wb-me b { display: block; font-size: .82em; font-weight: 500; opacity: .7; line-height: 1.15; }
+.wb-me-ti {
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   hyphens: auto;
   overflow-wrap: anywhere;
 }
-.wb-me b { font-weight: 500; opacity: .8; }
 /* Colours of solid entries come from the member colour (lib/color.js readableText). */
 /* One line: nowrap rather than a 1-line clamp, whose hidden second line can show its
    diacritics (Š) in the bottom padding. */

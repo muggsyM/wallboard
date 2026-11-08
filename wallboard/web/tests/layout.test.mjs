@@ -1,7 +1,7 @@
 // Mirrors wallboard/tests/test_events.py (event_days, bucket_by_day) plus the Task 7 review extras.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { localDate, addDays, daysOf, bucket, isPast, spanPart, monthGrid, noonOf, pickVisible } from "../display/lib/layout.js";
+import { localDate, addDays, daysOf, bucket, isPast, spanPart, weekGrid, noonOf, pickVisible } from "../display/lib/layout.js";
 import { readableText } from "../display/lib/color.js";
 
 const TZ = "Europe/Prague";
@@ -121,13 +121,19 @@ test("spanPart for the 20-22 Nov trip", () => {
   assert.equal(spanPart(timed("2026-11-07T23:00:00+01:00", "2026-11-08T01:00:00+01:00"), "2026-11-07"), "single");
 });
 
-test("monthGrid is Monday-first, 6 weeks", () => {
-  const g = monthGrid("2026-11-07");
-  assert.equal(g.length, 42);
-  assert.equal(g[0], "2026-10-26");
-  assert.equal(g[41], "2026-12-06");
-  // month starting on Monday starts on the 1st
-  assert.equal(monthGrid("2026-06-15")[0], "2026-06-01");
+test("weekGrid starts on the Monday of today's week and has 7 * weeks days", () => {
+  const g = weekGrid("2026-11-07", 5); // Saturday
+  assert.equal(g.length, 35);
+  assert.equal(g[0], "2026-11-02");
+  assert.equal(g[34], "2026-12-06");
+  assert.equal(weekGrid("2026-11-02", 4)[0], "2026-11-02"); // Monday is its own week start
+  assert.equal(weekGrid("2026-11-08", 4)[0], "2026-11-02"); // Sunday belongs to the week before
+  const six = weekGrid("2026-12-30", 6); // across a year boundary
+  assert.deepEqual([six[0], six[41]], ["2026-12-28", "2027-02-07"]);
+  // consecutive days, no gaps or repeats
+  for (let i = 1; i < six.length; i++) assert.equal(Date.parse(six[i]) - Date.parse(six[i - 1]), 86400000);
+  // DST change (Sun 25 Oct 2026) does not shift a day
+  assert.deepEqual(weekGrid("2026-10-25", 4).slice(6, 8), ["2026-10-25", "2026-10-26"]);
 });
 
 test("noonOf is local noon of the date", () => {

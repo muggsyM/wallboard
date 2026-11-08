@@ -14,7 +14,7 @@
 //   isPast(event, now, tz)            -> event ended at or before now
 //   spanPart(event, iso)              -> "single" | "start" | "middle" | "end"
 //   pickVisible(events, capacity, pastFn) -> {shown, hidden} when a day has too many events
-//   monthGrid(todayISO)               -> 42 iso dates, Monday-first, 6 weeks
+//   weekGrid(todayISO, weeks)         -> 7*weeks iso dates from the Monday of today's week
 //   assignLanes(weekDays, events)     -> Map event -> lane for multi-day all-day bars in a week row
 //   barPiece(event, iso, column)      -> how one day's piece of such a bar is drawn
 
@@ -163,14 +163,15 @@ export function pickVisible(events, capacity, pastFn) {
   return { shown: events.filter((ev) => !hide.has(ev)), hidden: hide.size };
 }
 
-export function monthGrid(todayISO) {
-  const first = `${todayISO.slice(0, 8)}01`;
-  const weekday = (new Date(utcOf(first)).getUTCDay() + 6) % 7; // Monday = 0
-  const start = addDays(first, -weekday);
-  return Array.from({ length: 42 }, (_, i) => addDays(start, i));
+// The Month page's rolling grid: Monday of the week containing todayISO, then `weeks`
+// whole weeks (the caller clamps the count).
+export function weekGrid(todayISO, weeks) {
+  const weekday = (new Date(utcOf(todayISO)).getUTCDay() + 6) % 7; // Monday = 0
+  const start = addDays(todayISO, -weekday);
+  return Array.from({ length: 7 * weeks }, (_, i) => addDays(start, i));
 }
 
-// Multi-day all-day events in a month week row are drawn as continuous bars. Each one gets
+// Multi-day all-day events in a Month week row are drawn as continuous bars. Each one gets
 // a lane (vertical slot, 0 = top) for the whole row, so its pieces line up from cell to cell;
 // a day renders its lanes first (empty lanes as spacers) and its other entries after them.
 // Greedy interval packing: bars sorted by first day in the row, longer first, then by the

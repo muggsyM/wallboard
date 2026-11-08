@@ -67,6 +67,7 @@
   "weather_windy": "Windy",
   "weather_windy_variant": "Windy and cloudy",
   "max_events_per_day": "Max events per day",
+  "weeks_shown": "Weeks shown",
   "rain_today": "rain today",
   "rain_tomorrow": "rain tomorrow",
   "rain_on": "rain {day}",

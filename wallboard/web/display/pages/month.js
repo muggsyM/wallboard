@@ -1,9 +1,11 @@
-// Month: a Monday-first 6-week grid filling the page below the header and a colour legend
-// (every configured member: colour dot + name). Each day shows its number (today: filled
-// blue on a blue ring), the forecast icon when there is one, the Czech holiday name (pink),
-// and up to `max_events_per_day` entries: "time title" with the member colour on the left
-// edge, all-day events solid. Out-of-month days are faded to 28 %, past days to 50 %,
-// weekends tinted. Look: mockups/month-v2.html.
+// Month: a rolling Monday-first grid of `weeks` weeks (4..6, default 5) starting on the
+// Monday of the current week, filling the page below the header (subtitle: the month(s)
+// covered) and a colour legend (every configured member: colour dot + name). Each day shows
+// its number (today: filled blue on a blue ring; the 1st of a month and the first cell add
+// the short month name), the forecast icon when there is one, the Czech holiday name (pink),
+// and up to `max_events_per_day` entries (default 4): a small time line above a title of up
+// to 3 lines, the member colour on the left edge; all-day events solid on one line. Past
+// days are faded to 50 %, weekends tinted. Look: mockups/month-v2.html.
 //
 // Multi-day all-day events are continuous bars (lib/layout.js assignLanes + barPiece): each
 // bar keeps one lane (vertical slot) across its week row, lanes come first in a cell (empty
@@ -16,21 +18,24 @@
 // The grid is rebuilt only when the calendar/weather payload, members, language, zone or
 // local minute changes (checked on every store update and every 20 s).
 import { renderHeader, safeColor } from "../header.js";
-import { t, getLanguage, fmtMonthYear, fmtWeekdayShort } from "../../shared/i18n.js";
+import { t, getLanguage, fmtMonthRange, fmtWeekdayShort, fmtDayMonthShort } from "../../shared/i18n.js";
 import { WEATHER_ICONS } from "../../shared/ha-format.js";
-import { localDate, noonOf, bucket, isPast, pickVisible, monthGrid, assignLanes, barPiece } from "../lib/layout.js";
+import { localDate, noonOf, bucket, isPast, pickVisible, weekGrid, assignLanes, barPiece } from "../lib/layout.js";
 import { readableText } from "../lib/color.js";
 import { chipTime } from "./week.js";
 
 const MINUTE_CHECK_MS = 20000;
-const DEFAULT_MAX = 3;
+const DEFAULT_MAX = 4;
+const DEFAULT_WEEKS = 5;
 
-// The setting comes from config (number, possibly a string); 1..6, default 3.
-export function clampMaxEvents(v) {
+// Settings come from config (number, possibly a string): rounded and clamped to lo..hi.
+function clampSetting(v, lo, hi, fallback) {
   const n = Math.round(Number(v));
-  if (v === null || v === undefined || v === "" || !Number.isFinite(n)) return DEFAULT_MAX;
-  return Math.min(6, Math.max(1, n));
+  if (v === null || v === undefined || v === "" || !Number.isFinite(n)) return fallback;
+  return Math.min(hi, Math.max(lo, n));
 }
+export const clampMaxEvents = (v) => clampSetting(v, 1, 6, DEFAULT_MAX);
+export const clampWeeks = (v) => clampSetting(v, 4, 6, DEFAULT_WEEKS);
 
 function el(tag, cls, text) {
   const n = document.createElement(tag);
@@ -74,8 +79,9 @@ function entry(ev, iso, tz, now, today) {
     if (iso === today && isPast(ev, now, tz)) e.classList.add("past");
   }
   const time = chipTime(ev, iso, tz);
-  if (time) e.append(el("b", "", time), " ");
-  e.append(ev.title ?? "");
+  if (time) e.append(el("b", "", time));
+  // Solid all-day entries are one nowrap line; timed titles clamp to 3 lines.
+  e.append(ev.all_day ? ev.title ?? "" : el("span", "wb-me-ti", ev.title ?? ""));
   return e;
 }
 
@@ -83,15 +89,22 @@ const overflows = (box) => box.scrollHeight > box.clientHeight + 1;
 
 // One day cell. `lanes` = the week row's Map event -> lane.
 function dayCell(d) {
-  const { iso, column, today, monthKey, events, lanes, holiday, icon, cap, tz, now } = d;
+  const { iso, column, first, today, events, lanes, holiday, icon, cap, tz, now } = d;
   const c = el("div", "wb-mc");
-  if (iso.slice(0, 7) !== monthKey) c.classList.add("out");
-  else if (iso < today) c.classList.add("past");
+  if (iso < today) c.classList.add("past");
+  const newMonth = iso.endsWith("-01");
+  if (newMonth) c.classList.add("m1");
   if (isWeekend(iso)) c.classList.add("we");
   if (iso === today) c.classList.add("today");
 
   const head = el("div", "wb-mc-n");
-  head.append(el("span", "", String(Number(iso.slice(8)))));
+  const num = el("span", "", String(Number(iso.slice(8))));
+  if (newMonth || first) {
+    const { day, month } = fmtDayMonthShort(noonOf(iso, tz));
+    num.textContent = day;
+    num.append(el("small", "wb-mc-m", month));
+  }
+  head.append(num);
   if (icon) head.append(el("i", `mdi ${icon}`));
 
   const barsHere = events.filter((ev) => lanes.has(ev));
@@ -113,7 +126,7 @@ function dayCell(d) {
   };
   let capacity = Math.max(0, cap - laneRows);
   fill(capacity);
-  // Called once the grid is laid out: drop entries until the 2-line clamps fit the cell.
+  // Called once the grid is laid out: drop entries until the 3-line clamps fit the cell.
   const fit = () => {
     while (capacity > 0 && overflows(c)) fill(--capacity);
   };
@@ -123,13 +136,18 @@ function dayCell(d) {
 export default {
   type: "month",
   titleKey: "month",
-  settings: [{ key: "max_events_per_day", type: "number", labelKey: "max_events_per_day", default: DEFAULT_MAX }],
+  settings: [
+    { key: "weeks", type: "number", labelKey: "weeks_shown", default: DEFAULT_WEEKS, min: 4, max: 6 },
+    { key: "max_events_per_day", type: "number", labelKey: "max_events_per_day", default: DEFAULT_MAX, min: 1, max: 6 },
+  ],
   mount(root, ctx) {
     root.innerHTML = `<div class="wb-page-header"></div><div class="wb-legend"></div><div class="wb-month"></div>`;
     const header = root.querySelector(".wb-page-header");
     const legend = root.querySelector(".wb-legend");
     const grid = root.querySelector(".wb-month");
     const cap = clampMaxEvents(ctx.options?.max_events_per_day);
+    const weeks = clampWeeks(ctx.options?.weeks);
+    grid.style.setProperty("--wb-mweeks", String(weeks));
     let last = null; // key of the last grid build
     let alive = true;
 
@@ -153,7 +171,9 @@ export default {
       const now = Date.now();
       const tz = state.config?.timezone || "Europe/Prague";
       const today = localDate(now, tz);
-      renderHeader(header, state, { titleKey: "month", subtitle: fmtMonthYear(noonOf(today, tz)) });
+      const days = weekGrid(today, weeks);
+      const subtitle = fmtMonthRange(noonOf(days[0], tz), noonOf(days[days.length - 1], tz));
+      renderHeader(header, state, { titleKey: "month", subtitle });
       const key = {
         tz, minute: Math.floor(now / 60000), calendar: state.calendar, weather: state.weather, lang: getLanguage(),
         members: state.config?.members,
@@ -162,17 +182,16 @@ export default {
       last = key;
       renderLegend(key.members);
 
-      const days = monthGrid(today);
       const byDay = bucket(state.calendar?.events || [], days[0], days.length, tz);
       const holidays = state.calendar?.holidays || {};
       const heads = days.slice(0, 7).map((iso) => el("div", "wb-mh", fmtWeekdayShort(noonOf(iso, tz))));
       const cells = [];
-      for (let w = 0; w < 6; w++) {
+      for (let w = 0; w < weeks; w++) {
         const week = days.slice(w * 7, w * 7 + 7);
         const lanes = assignLanes(week, [...new Set(week.flatMap((iso) => byDay.get(iso)))]);
         week.forEach((iso, column) => {
           cells.push(dayCell({
-            iso, column, today, monthKey: today.slice(0, 7), events: byDay.get(iso), lanes,
+            iso, column, first: w === 0 && column === 0, today, events: byDay.get(iso), lanes,
             holiday: typeof holidays[iso] === "string" ? holidays[iso] : "", icon: weatherIcon(state.weather, iso),
             cap, tz, now,
           }));
