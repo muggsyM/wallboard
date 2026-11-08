@@ -165,55 +165,63 @@ html.remote #app {
 .wb-week {
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-rows: repeat(7, minmax(0, 1fr));
-  gap: 1.6cqw;
-}
-.wb-wrow {
   display: flex;
-  gap: 3cqw;
-  min-height: 0;
-  padding: 1.6cqw 2.4cqw;
+  flex-direction: column;
+  gap: 1.4cqw;
+  overflow: hidden;
+}
+/* Mockup "tyden" W2: rows as tall as their content, sharing the spare height. */
+.wb-wrow {
+  flex: 1 0 auto;
+  display: flex;
+  gap: 2.4cqw;
+  padding: 1.4cqw 2.2cqw;
   border-radius: 2.6cqw;
   background: rgba(255, 255, 255, .05);
-  overflow: hidden;
 }
 .wb-wrow.today {
   background: rgba(168, 67, 74, .3);
   box-shadow: inset 0 0 0 .4cqw rgba(214, 112, 120, .8);
 }
+.wb-wrow.sel { box-shadow: inset 0 0 0 .4cqw rgba(255, 255, 255, .5); }
 .wb-wd { width: 14cqw; flex: none; }
 .wb-wd-n { font-size: 2.6cqw; letter-spacing: .4cqw; text-transform: uppercase; opacity: .7; font-weight: 400; }
 .wb-wrow.we .wb-wd-n, .wb-wrow.we .wb-wd-d { color: var(--wb-weekend); opacity: .9; }
-.wb-wd-d { font-size: 7.5cqw; font-weight: 400; line-height: 1; }
-.wb-wd-w { font-size: 2.6cqw; opacity: .8; margin-top: .6cqw; white-space: nowrap; }
-.wb-wd-w .mdi { color: var(--wb-accent-sun); font-size: 3.4cqw; margin-right: .6cqw; }
-.wb-chips {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: .8cqw;
-  overflow: hidden;
-}
-.wb-chip {
+.wb-wd-d { font-size: 6.4cqw; font-weight: 400; line-height: 1; }
+.wb-wd-w { font-size: 2.5cqw; opacity: .85; margin-top: .5cqw; white-space: nowrap; }
+.wb-wd-w .mdi { color: var(--wb-accent-sun); font-size: 3.2cqw; margin-right: .5cqw; }
+.wb-wd-w .wb-wd-rain { color: #8fc8ff; margin: 0 0 0 .8cqw; }
+.wb-wev { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1cqw; }
+.wb-wini {
   flex: none;
-  display: flex;
-  align-items: baseline;
-  /* A little smaller than the mockup's 3.2cqw so three chips fit an equal-height row. */
-  font-size: 3cqw;
-  line-height: 1.15;
-  padding: .6cqw 1.6cqw;
-  border-left: 1cqw solid rgba(255, 255, 255, .4);
-  border-radius: 1.2cqw;
-  background: rgba(255, 255, 255, .07);
-  white-space: nowrap;
+  width: 4.4cqw;
+  height: 4.4cqw;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  font: 600 2.3cqw system-ui, "DejaVu Sans", sans-serif;
+  color: #1d1f22;
 }
-.wb-chip b { flex: none; font-weight: 400; margin-right: 1.4cqw; opacity: .85; font-variant-numeric: tabular-nums; }
-.wb-chip-ti { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-/* Text colour is set per chip from the member colour (lib/color.js readableText). */
-.wb-chip.all { border-left: none; padding-left: 2.6cqw; font-weight: 400; }
-.wb-chip.past { opacity: .4; }
+.wb-wads { display: flex; flex-wrap: wrap; gap: 1cqw; }
+.wb-wad {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.1cqw;
+  max-width: 100%;
+  padding: .3cqw 1.4cqw .3cqw .5cqw;
+  border-left: .9cqw solid;
+  border-radius: 1cqw;
+  background: rgba(255, 255, 255, .08);
+  font-size: 3cqw;
+  line-height: 1.2;
+}
+.wb-wad .wb-wini { width: 3.6cqw; height: 3.6cqw; font-size: 1.9cqw; }
+.wb-wad-ti { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wb-wtl { display: flex; align-items: flex-start; gap: 1.6cqw; font-size: 3.5cqw; line-height: 1.15; }
+.wb-wtl-t { width: 9.5cqw; flex: none; font-size: 3cqw; opacity: .85; padding-top: .4cqw; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wb-wtl-ti { min-width: 0; overflow-wrap: anywhere; }
+.wb-wtl-loc { display: block; font-size: 2.5cqw; opacity: .65; }
+.wb-wad.past, .wb-wtl.past { opacity: .4; }
 /* line-height 1.4: Patrick Hand's glyph box is taller than 1.15em, and a "+N more" line at
    the bottom of a row would otherwise count as overflow in the fit checks. */
 .wb-more { flex: none; font-size: 2.8cqw; line-height: 1.4; padding-left: 2.6cqw; opacity: .75; }

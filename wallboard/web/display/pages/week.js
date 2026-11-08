@@ -1,19 +1,24 @@
-// "Next 7 days": seven equal-height rows starting today, each with weekday, day number,
-// that day's forecast and the day's events as chips (member colour on the left border,
-// all-day events solid, past events faded). A row whose chips do not fit shows fewer
-// (pickVisible: past timed events go first, then from the end) plus a "+N more" line.
-// Look: mockups/portrait-v1.html screen 2.
+// "Next 7 days" (mockup "tyden" variant W2): seven rows starting today, each with weekday,
+// day number and that day's forecast (☂ when rain is likely), then the day's events: all-day
+// ones as small chips side by side (member-colour edge + the member's initial), below them
+// the timed ones as lines (time, initial dot, title, location). Nothing is merged; past
+// events are faded. Rows are as tall as their content and share the spare height; when the
+// week does not fit, the fullest day is trimmed first (pickVisible: past timed events go
+// first, then from the end) plus "+N more". Tapping a day opens the day window
+// (lib/day-window.js).
 //
-// Rows are rebuilt only when the calendar/weather payload, language, zone or local minute
-// changes (checked on every store update and every 20 s); HA deltas only touch the header.
+// Rows are rebuilt only when the calendar/weather payload, members, language, zone or local
+// minute changes (checked on every store update and every 20 s); HA deltas only touch the
+// header.
 import { renderHeader, safeColor } from "../header.js";
 import { t, getLanguage, fmtTime, fmtShortDayMonth, fmtWeekdayShort } from "../../shared/i18n.js";
 import { WEATHER_ICONS } from "../../shared/ha-format.js";
 import { localDate, addDays, noonOf, bucket, daysOf, isPast, pickVisible } from "../lib/layout.js";
-import { readableText } from "../lib/color.js";
+import { createDayWindow } from "../lib/day-window.js";
 
 const DAYS = 7;
 const MINUTE_CHECK_MS = 20000;
+const RAIN_MIN_PERCENT = 50;
 
 // cs "7.–13. 11." / "28. 11.–4. 12."; en "7–13/11" / "28/11–4/12".
 export function weekSubtitle(firstISO, lastISO, tz) {
@@ -42,7 +47,8 @@ function weatherFor(weather, iso) {
   const high = num(d.high);
   const low = num(d.low);
   const temps = high !== null && low !== null ? t("high_low", { high, low }) : high !== null ? `${high}°` : "";
-  return { icon: WEATHER_ICONS[d.condition] || "mdi-weather-partly-cloudy", temps };
+  const rain = (num(d.precip_probability) ?? 0) >= RAIN_MIN_PERCENT;
+  return { icon: WEATHER_ICONS[d.condition] || "mdi-weather-partly-cloudy", temps, rain };
 }
 
 // Time shown on a chip: start time on the start day; on later days of a timed event the
@@ -54,39 +60,58 @@ export function chipTime(ev, iso, tz) {
   return iso === days[days.length - 1] ? `–${fmtTime(new Date(ev.end))}` : "";
 }
 
-function chip(ev, iso, tz, now) {
-  const c = el("div", "wb-chip");
-  const color = safeColor(ev.color);
-  if (ev.all_day) {
-    c.classList.add("all");
-    c.style.background = color;
-    c.style.color = readableText(color);
-  } else {
-    c.style.borderLeftColor = color;
-  }
+const overflows = (box) => box.scrollHeight > box.clientHeight + 1;
+
+function initialDot(ev, initials) {
+  const c = safeColor(ev.color);
+  const d = el("span", "wb-wini", initials.get(ev.member_id) ?? "•");
+  d.style.background = c;
+  return d;
+}
+
+// An all-day chip: member-colour edge, initial, title.
+function allDayChip(ev, initials, now, tz) {
+  const c = el("span", "wb-wad");
+  c.style.borderLeftColor = safeColor(ev.color);
   if (isPast(ev, now, tz)) c.classList.add("past");
-  const time = chipTime(ev, iso, tz);
-  if (time) c.append(el("b", "", time));
-  c.append(el("span", "wb-chip-ti", ev.title ?? ""));
+  c.append(initialDot(ev, initials), el("span", "wb-wad-ti", ev.title ?? ""));
   return c;
 }
 
-const overflows = (box) => box.scrollHeight > box.clientHeight + 1;
-
-// Show all chips if they fit; otherwise the largest pickVisible() selection that fits
-// together with its own "+N more" line (at least one chip stays). Needs the row laid out.
-function fitChips(box, events, iso, tz, now) {
-  if (events.length < 2 || !overflows(box)) return;
-  const past = (ev) => isPast(ev, now, tz);
-  for (let cap = events.length - 1; cap >= 1; cap--) {
-    const { shown, hidden } = pickVisible(events, cap, past);
-    box.replaceChildren(...shown.map((ev) => chip(ev, iso, tz, now)), el("div", "wb-more", t("more_n", { n: hidden })));
-    if (!overflows(box)) return;
-  }
+// A timed line: time, initial, title and location.
+function timedLine(ev, iso, tz, now, initials) {
+  const r = el("div", "wb-wtl");
+  if (isPast(ev, now, tz)) r.classList.add("past");
+  r.append(el("span", "wb-wtl-t", chipTime(ev, iso, tz)), initialDot(ev, initials));
+  const ti = el("span", "wb-wtl-ti", ev.title ?? "");
+  if (ev.location) ti.append(el("span", "wb-wtl-loc", ev.location));
+  r.append(ti);
+  return r;
 }
 
-function row(iso, today, events, weather, tz, now) {
+// Fill a day's event box with at most `cap` of its events (all when cap >= length).
+function fillDay(box, d, cap, tz, now, initials) {
+  const { shown, hidden } = cap >= d.events.length
+    ? { shown: d.events, hidden: 0 }
+    : pickVisible(d.events, cap, (ev) => isPast(ev, now, tz));
+  const parts = [];
+  const alls = shown.filter((ev) => ev.all_day);
+  if (alls.length) {
+    const chips = el("div", "wb-wads");
+    chips.append(...alls.map((ev) => allDayChip(ev, initials, now, tz)));
+    parts.push(chips);
+  }
+  parts.push(...shown.filter((ev) => !ev.all_day).map((ev) => timedLine(ev, d.iso, tz, now, initials)));
+  if (hidden) parts.push(el("div", "wb-more", t("more_n", { n: hidden })));
+  if (!d.events.length) parts.push(el("div", "wb-empty", t("no_events")));
+  box.replaceChildren(...parts);
+  d.cap = Math.min(cap, d.events.length);
+}
+
+function row(iso, today, events, weather, tz) {
   const r = el("div", "wb-wrow");
+  r.dataset.iso = iso;
+  r.dataset.tap = ""; // a tap opens the day window instead of paging
   if (iso === today) r.classList.add("today");
   if (isWeekend(iso)) r.classList.add("we");
   const wd = el("div", "wb-wd");
@@ -96,13 +121,12 @@ function row(iso, today, events, weather, tz, now) {
   if (wx) {
     const w = el("div", "wb-wd-w");
     w.append(el("i", `mdi ${wx.icon}`), el("span", "", wx.temps));
+    if (wx.rain) w.append(el("i", "mdi mdi-umbrella wb-wd-rain"));
     wd.append(w);
   }
-  const chips = el("div", "wb-chips");
-  if (events.length) chips.append(...events.map((ev) => chip(ev, iso, tz, now)));
-  else chips.append(el("div", "wb-empty", t("no_events")));
-  r.append(wd, chips);
-  return { r, chips, events, iso };
+  const box = el("div", "wb-wev");
+  r.append(wd, box);
+  return { r, box, events, iso, cap: events.length };
 }
 
 export default {
@@ -115,24 +139,40 @@ export default {
     const list = root.querySelector(".wb-week");
     let last = null; // key of the last row build
     let alive = true;
+    const win = createDayWindow(root, ctx, {
+      cells: ".wb-wrow[data-iso]",
+      within: list,
+      onSelect: (iso) => {
+        for (const r of list.children) r.classList.toggle("sel", r.dataset.iso === iso);
+      },
+    });
 
     const same = (a, b) =>
       a && b && a.tz === b.tz && a.minute === b.minute && a.calendar === b.calendar && a.weather === b.weather &&
-      a.lang === b.lang;
+      a.lang === b.lang && a.members === b.members;
 
     function render(state, force = false) {
       const now = Date.now();
       const tz = state.config?.timezone || "Europe/Prague";
       const today = localDate(now, tz);
       renderHeader(header, state, { titleKey: "this_week", subtitle: weekSubtitle(today, addDays(today, DAYS - 1), tz) });
-      const key = { tz, minute: Math.floor(now / 60000), calendar: state.calendar, weather: state.weather, lang: getLanguage() };
+      win.update(state);
+      const members = state.config?.members;
+      const key = { tz, minute: Math.floor(now / 60000), calendar: state.calendar, weather: state.weather, lang: getLanguage(), members };
       if (!force && same(key, last)) return;
       last = key;
       const days = bucket(state.calendar?.events || [], today, DAYS, tz);
-      const rows = [...days].map(([iso, evs]) => row(iso, today, evs, state.weather, tz, now));
+      const initials = new Map((members || []).map((m) => [m.id, m.initial]));
+      const rows = [...days].map(([iso, evs]) => row(iso, today, evs, state.weather, tz));
+      for (const x of rows) fillDay(x.box, x, x.events.length, tz, now, initials);
       list.replaceChildren(...rows.map((x) => x.r));
-      // After layout: measuring needs the rows in place.
-      for (const x of rows) fitChips(x.chips, x.events, x.iso, tz, now);
+      for (const x of rows) x.r.classList.toggle("sel", x.iso === win.iso());
+      // After layout: while the week overflows, take one entry from the fullest day.
+      while (overflows(list)) {
+        const fullest = rows.reduce((a, b) => (b.cap > a.cap ? b : a));
+        if (fullest.cap <= 1) break;
+        fillDay(fullest.box, fullest, fullest.cap - 1, tz, now, initials);
+      }
     }
 
     const refit = () => alive && render(ctx.store.get(), true);
@@ -159,6 +199,7 @@ export default {
       update: (state) => render(state),
       destroy() {
         alive = false;
+        win.destroy();
         clearInterval(timer);
         ro?.disconnect();
         document.fonts?.removeEventListener?.("loadingdone", refit);
