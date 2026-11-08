@@ -158,7 +158,7 @@ html.remote #app {
   font-weight: 600;
 }
 .wb-avatar.home { border-color: var(--wb-home); }
-.wb-avatar.away { border-color: rgba(255, 255, 255, .3); opacity: .5; }
+.wb-avatar.away { opacity: .45; } /* dimmed, no light ring: on chalk that read as a white wash */
 
 /* ---------- week page ---------- */
 .wb-page[data-page="week"] { gap: 3cqw; }

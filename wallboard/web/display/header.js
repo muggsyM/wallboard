@@ -61,8 +61,12 @@ function peopleHtml(config, ha) {
   const members = config?.members || [];
   if (!members.length) return "";
   const avatars = members.map((m) => {
+    // Green ring when HA says home, dimmed only for a known "away" state. An unknown or
+    // unavailable person (e.g. a phone that reports no location) looks like a plain dot.
+    const st = m.person_entity ? ha?.[m.person_entity]?.state : undefined;
     let cls = "";
-    if (m.person_entity) cls = ha?.[m.person_entity]?.state === "home" ? " home" : " away";
+    if (st === "home") cls = " home";
+    else if (st && !["unknown", "unavailable"].includes(st)) cls = " away";
     return `<span class="wb-avatar${cls}" style="background:${safeColor(m.color)}" title="${esc(m.name)}">${esc(m.initial)}</span>`;
   });
   return `<div class="wb-people">${avatars.join("")}</div>`;
