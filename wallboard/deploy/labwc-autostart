@@ -19,7 +19,7 @@ wlr-randr --output @OUTPUT@ --transform @ROTATION@ || true
     "$browser" --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble \
       --hide-crash-restore-bubble --user-data-dir="$profile" \
       --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch \
-      --ozone-platform=wayland --password-store=basic \
+      --ozone-platform=wayland --password-store=basic --disable-features=Translate \
       http://localhost:8080/
     sleep 3
   done
