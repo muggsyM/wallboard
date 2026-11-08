@@ -1,11 +1,8 @@
 .claude/worktrees/
 
-# Real config holds your HA access token
-www/dakboard/config.js
-
 __pycache__/
 
-# Brainstorm mockups
+# Brainstorm mockups and build notes
 .superpowers/
 
 # Venv when the repo is cloned to ~/wallboard (deploy/install.sh)

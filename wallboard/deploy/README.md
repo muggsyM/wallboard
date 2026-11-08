@@ -21,7 +21,7 @@ Contents: [Requirements](#requirements) · [Install](#install) · [First login a
 
    ```sh
    sudo apt install -y git
-   git clone <repo-url> ~/wallboard
+   git clone https://github.com/muggsyM/wallboard.git ~/wallboard
    cd ~/wallboard
    ./wallboard/deploy/install.sh
    ```

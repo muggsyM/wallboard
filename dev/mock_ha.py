@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
-"""Tiny fake Home Assistant for previewing the DAKboard widget / wallboard without a real HA.
+"""Tiny fake Home Assistant for developing the wallboard without a real HA.
 
-Serves, on one port (like real HA):
-  /local/...        files from ../www (config.js is replaced by dev/config.dev.js)
-  /dev/...          files from ./dev (preview.html)
-  /api/websocket    a WebSocket speaking enough of the HA API (auth, ping,
-                    subscribe_entities, call_service) and randomly changing states every few seconds.
+Serves /api/websocket: a WebSocket speaking enough of the HA API (auth, ping,
+subscribe_entities, call_service, weather.get_forecasts) and randomly changing
+states every few seconds.
 
 Usage:  python3 dev/mock_ha.py [--port 8123] [--token dev-token]
-Then open http://localhost:8123/dev/preview.html
+Then set the wallboard's HA URL to http://127.0.0.1:8123 with token dev-token.
 In tests:  mock = MockHA(); port = await mock.start(); ...; await mock.stop()
 Requires: pip install websockets   (>= 13)
 """
@@ -304,7 +302,7 @@ async def main():
     args = p.parse_args()
     mock = MockHA(token=args.token, host="0.0.0.0")
     await mock.start(args.port, args.interval)
-    print(f"Mock HA on http://localhost:{args.port}/dev/preview.html  (token: {args.token})")
+    print(f"Mock HA on ws://localhost:{args.port}/api/websocket  (token: {args.token})")
     await asyncio.Event().wait()
 
 
