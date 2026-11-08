@@ -117,7 +117,7 @@ export default {
         box.querySelector(".wb-lbl").textContent = t(group);
         const made = cfgs.map((cfg) => {
           const node = el("div");
-          const handle = renderTile(node, cfg, state.ha?.[cfg.entity_id], () => ctx.store.sendAction(cfg.entity_id), { holdRotation: ctx.holdRotation });
+          const handle = renderTile(node, cfg, state.ha?.[cfg.entity_id], () => ctx.store.sendAction(cfg.entity_id), { holdRotation: ctx.holdRotation, canAct: ctx.canAct });
           return { entityId: cfg.entity_id, node, handle };
         });
         box.querySelector(".wb-tiles").replaceChildren(...made.map((x) => x.node));

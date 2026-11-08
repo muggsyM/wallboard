@@ -7,7 +7,9 @@
 //   tileView(tileCfg, haState, state)     -> {name, value, icon, tone: ""|"on"|"run", pending}
 //
 // Events:
-//   {type:"tap", entityId, haState, controllable}  ignored while pending or when not controllable
+//   {type:"tap", entityId, haState, controllable, canAct}
+//                                                  ignored while pending, when not controllable, or
+//                                                  when canAct is false (view-only visitor)
 //   {type:"result", token, ok}                     the sendAction outcome for tap `token`
 //   {type:"ha", haState}                           a store update (any; unchanged states are no-ops)
 //   {type:"timeout", token}                        safety timer after an ok result
@@ -38,7 +40,7 @@ const changed = (s, haState) =>
 export function tileReducer(s, ev) {
   switch (ev.type) {
     case "tap":
-      if (s.pending || !ev.controllable) return s;
+      if (s.pending || !ev.controllable || ev.canAct === false) return s;
       return {
         pending: true,
         token: s.token + 1,

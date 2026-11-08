@@ -128,6 +128,10 @@ function holdRotation(ms) {
   rotator?.touch(Date.now(), ms);
 }
 
+// ctx.canAct(): false for a view-only visitor (the server's "viewer" message); tiles then
+// ignore taps. Asked live, so it follows the message that arrives just after the snapshot.
+const canAct = () => store.get().viewer?.can_act !== false;
+
 function mountCurrent(animate) {
   const page = rotator?.current();
   const mod = page && getPage(page.type);
@@ -142,7 +146,7 @@ function mountCurrent(animate) {
     let inst;
     try {
       // ctx.options: the module's settings defaults overlaid with this page's config options.
-      inst = mod.mount(el, { store, t, fmt, photo, options: pageOptions(mod, page), holdRotation });
+      inst = mod.mount(el, { store, t, fmt, photo, options: pageOptions(mod, page), holdRotation, canAct });
     } catch (err) {
       console.error(`wallboard: page "${page.type}" failed to mount`, err);
       inst = { update() {}, destroy() {} };

@@ -28,14 +28,14 @@ Contents: [Requirements](#requirements) · [Install](#install) · [First login a
 
    Run it as your normal user, not with `sudo`; it asks for your sudo password where needed. It asks you to choose the **admin password** (at least 8 characters) the first time.
 4. Reboot: `sudo reboot`. After the desktop starts, the board appears full screen.
-5. Open Settings from a phone or laptop on the same network: `http://wallboard.local:8080/settings` (use your hostname).
+5. Open Settings from a phone or laptop on the same network: `http://wallboard.local/settings` (use your hostname). Port 8080 works too: `http://wallboard.local:8080/settings`.
 
 The installer is safe to run again at any time. It:
 
 - installs the packages `python3-venv`, `chromium` (or `chromium-browser` on older images), `wlr-randr`, `libheif1`, `curl`, and `unclutter-xfixes` if available;
 - creates the Python environment in `~/wallboard/.venv` and installs the server into it;
 - creates the data directory `~/wallboard-data` and sets the admin password if none is set yet;
-- installs and starts the `wallboard` systemd service (it restarts automatically if it crashes, and starts at boot);
+- installs and starts the `wallboard` systemd service (it restarts automatically if it crashes, and starts at boot). It listens on port 8080 and also on port 80, so `http://<hostname>.local/` works without `:8080`. If port 80 cannot be used (for example another web server already has it), the log says so and port 8080 keeps working;
 - adds a marked block to `~/.config/labwc/autostart` that rotates the screen and starts Chromium in kiosk mode once the server answers, restarting the browser if it closes;
 - maps the touchscreen to the display in `~/.config/labwc/rc.xml` (`<touch deviceName="" mapToOutput="HDMI-A-1"/>`), so touches line up after rotation. If the file already has a `<touch>` line, it leaves it alone and tells you. Before changing the file, it saves a backup as `rc.xml.wallboard-bak`;
 - turns off screen blanking (`raspi-config nonint do_blanking 1`).
@@ -106,8 +106,9 @@ If a calendar later shows **"Sign-in expired – sign in again"**, press *Connec
 
 ## Everyday use
 
-- **Settings:** `http://<hostname>.local:8080/settings`. **Photos:** `http://<hostname>.local:8080/photos`.
-- **The board on a laptop or phone:** open `http://<hostname>.local:8080/` and log in with the admin password. It shows the same live board (portrait, centred) and the tiles work. Without logging in, other devices are sent to the login page, so nobody else on the network can operate your devices through it.
+- **Settings:** `http://<hostname>.local/settings`. **Photos:** `http://<hostname>.local/photos`. The board, Settings and Photos answer at `http://<hostname>.local/` as well as at `http://<hostname>.local:8080/` (port 80 needs the installer from this version: if you updated from an older one, rerun `./wallboard/deploy/install.sh`).
+- **The board on a laptop or phone:** open `http://<hostname>.local/` and log in with the admin password. It shows the same live board (portrait, centred) and the tiles work. Without logging in, other devices are sent to the login page, so nobody else on the network can operate your devices through it.
+- **Show the board to the family without a password:** Settings → *General* → *Show the board on other devices without a password (view only)*. Then anyone on your network can open `http://<hostname>.local/` and watch the board without logging in, but the tiles do nothing for them; only the Pi itself and logged-in devices can operate them. Settings and Photos still need the password.
 - **Change the admin password** in Settings → *Admin password*. Other logged-in devices are logged out.
 - **Login lockout:** after 5 wrong passwords, that device is locked out for a while, and each further lockout lasts longer (up to 15 minutes). If there are 30 failed logins within 15 minutes, everyone is locked out for a while, except logins from the Pi itself (for example a browser on the Pi or an SSH tunnel). If you have forgotten the password, set a new one over SSH:
 

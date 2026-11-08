@@ -548,6 +548,10 @@ html.remote #app {
 .wb-tile.run { background: rgba(123, 224, 165, .16); }
 .wb-tile.run .mdi { color: var(--wb-home); }
 .wb-tile.pending, .wb-tile.pressed { background: rgba(255, 255, 255, .16); }
+/* A view-only visitor (public_view, not logged in): taps do nothing, so no pointer and no
+   pressed look (tile.js never adds .pressed then). */
+html.remote .wb-tile[data-tap] { cursor: pointer; }
+html.remote .wb-tile.view-only { cursor: default; }
 .wb-spin {
   flex: none;
   width: 2.2cqw;

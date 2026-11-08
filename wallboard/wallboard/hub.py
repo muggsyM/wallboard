@@ -37,11 +37,14 @@ class Hub:
             raise ValueError(f"unknown topic: {name}")
         self._topics[name] = value
 
-    async def connect(self, ws) -> None:
-        """Register an already-accepted socket and send it the current snapshot."""
+    async def connect(self, ws, after: list[dict] | None = None) -> None:
+        """Register an already-accepted socket and send it the current snapshot, then the
+        `after` messages (e.g. the connection's viewer role)."""
         self._sockets.add(ws)
         try:
             await ws.send_json(self.snapshot())
+            for msg in after or ():
+                await ws.send_json(msg)
         except Exception:
             self._sockets.discard(ws)
             raise

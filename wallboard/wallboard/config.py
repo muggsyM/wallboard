@@ -90,6 +90,8 @@ class Config(BaseModel):
     quick_tiles: list[str] = []  # <= 4 entity_ids, each must be in tiles
     pages: list[PageRef] = _default_pages()
     photos_shuffle: bool = False
+    # Show the board (view only) to non-logged-in devices on the LAN; see auth.public_view_enabled.
+    public_view: bool = False
 
     @field_validator("timezone")
     @classmethod

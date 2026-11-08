@@ -79,7 +79,8 @@ def test_config_topic_set_at_startup(app):
 def test_ha_delta_updates_snapshot(app, client):
     state = {"state": "on", "attributes": {}, "last_changed": "t"}
     with client.websocket_connect("/ws") as ws:
-        ws.receive_json()
+        assert ws.receive_json()["type"] == "snapshot"
+        assert ws.receive_json() == {"type": "viewer", "can_act": True}
         client.portal.call(app.state.hub.publish, {"type": "ha", "entity_id": "light.a", "state": state})
         assert ws.receive_json() == {"type": "ha", "entity_id": "light.a", "state": state}
         with client.websocket_connect("/ws") as ws2:
@@ -143,7 +144,8 @@ def test_action_routed(app, client):
 
     app.state.hub.on_action = on_action
     with client.websocket_connect("/ws") as ws:
-        ws.receive_json()
+        assert ws.receive_json()["type"] == "snapshot"
+        assert ws.receive_json() == {"type": "viewer", "can_act": True}
         ws.send_json({"type": "action", "id": "1", "entity_id": "light.a"})
         assert ws.receive_json() == {"type": "action_result", "id": "1", "ok": True, "error": None}
     assert calls == [("light.a", "1")]
@@ -152,14 +154,16 @@ def test_action_routed(app, client):
 def test_action_without_handler(app, client):
     app.state.hub.on_action = None
     with client.websocket_connect("/ws") as ws:
-        ws.receive_json()
+        assert ws.receive_json()["type"] == "snapshot"
+        assert ws.receive_json() == {"type": "viewer", "can_act": True}
         ws.send_json({"type": "action", "id": "7", "entity_id": "light.a"})
         assert ws.receive_json() == {"type": "action_result", "id": "7", "ok": False, "error": "not available"}
 
 
 def test_malformed_messages_ignored(client):
     with client.websocket_connect("/ws") as ws:
-        ws.receive_json()
+        assert ws.receive_json()["type"] == "snapshot"
+        assert ws.receive_json() == {"type": "viewer", "can_act": True}
         ws.send_text("not json")
         ws.send_json([1, 2])
         ws.send_json({"type": "nope"})
@@ -306,7 +310,8 @@ def test_host_and_origin_helpers():
 
 def test_binary_frame_ignored(client):
     with client.websocket_connect("/ws") as ws:
-        ws.receive_json()
+        assert ws.receive_json()["type"] == "snapshot"
+        assert ws.receive_json() == {"type": "viewer", "can_act": True}
         ws.send_bytes(b"\x00\x01")
         ws.send_json({"type": "action", "id": "3", "entity_id": "light.a"})
         assert ws.receive_json()["id"] == "3"
@@ -363,3 +368,146 @@ def test_same_origin_helper():
     assert not so("http://evil.example", "wallboard.local:8080")
     assert not so("http://user@wallboard.local:8080", "wallboard.local:8080")
     assert not so(None, "wallboard.local:8080") and not so("null", "x") and not so("http://x:bad", "x:bad")
+
+
+def test_ws_lan_admin_on_port_80_same_origin(app):
+    """Served on port 80: Host has no port and the browser Origin has none either."""
+    c = _lan_admin(app, host="wallboard.local")
+    hdrs = {"host": "wallboard.local", "origin": "http://wallboard.local"}
+    with c.websocket_connect("/ws", headers=hdrs) as ws:
+        assert ws.receive_json()["type"] == "snapshot"
+        assert ws.receive_json() == {"type": "viewer", "can_act": True}
+
+
+# ---- public_view: anonymous LAN visitors may view (never control) the board ----------------
+
+LAN_HOST = "wallboard.local"
+LAN_HDRS = {"host": LAN_HOST, "origin": f"http://{LAN_HOST}"}
+MEDIA_NAME = "0123456789abcdef0123456789abcdef.jpg"
+
+
+def _set_public_view(app, on: bool) -> None:
+    store = app.state.store
+    store.save_config(store.config.model_copy(update={"public_view": on}))
+
+
+def _anon(app):
+    return TestClient(app, base_url=f"http://{LAN_HOST}", client=("10.0.10.53", 50000))
+
+
+@pytest.fixture
+def media_file(app):
+    path = app.state.photos.path(MEDIA_NAME)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\xff\xd8\xff\xd9")
+    return MEDIA_NAME
+
+
+def _ws_refused(c, hdrs):
+    with c.websocket_connect("/ws", headers=hdrs) as ws:
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_json()
+    return exc.value.code
+
+
+def test_public_view_off_refuses_anonymous(app, media_file):
+    assert app.state.store.config.public_view is False
+    c = _anon(app)
+    r = c.get("/", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/login?next=/"
+    assert c.get("/static/display/shell.js").status_code == 403
+    assert c.get("/static/shared/i18n.js").status_code == 403
+    assert c.get(f"/media/{media_file}").status_code == 403
+    assert _ws_refused(c, LAN_HDRS) == 4403
+
+
+def test_public_view_on_serves_anonymous_view_only(app, media_file):
+    _set_public_view(app, True)
+    c = _anon(app)
+    r = c.get("/", follow_redirects=False)
+    assert r.status_code == 200 and "<html" in r.text.lower()
+    assert c.get("/static/display/shell.js").status_code == 200
+    assert c.get("/static/shared/i18n.js").status_code == 200
+    assert c.get(f"/media/{media_file}").status_code == 200
+    with c.websocket_connect("/ws", headers=LAN_HDRS) as ws:
+        snap = ws.receive_json()
+        assert snap["type"] == "snapshot"
+        assert ws.receive_json() == {"type": "viewer", "can_act": False}
+
+
+def test_public_view_snapshot_has_no_secrets(app):
+    store = app.state.store
+    store.save_secrets(store.secrets.model_copy(update={"ha_token": "TOPSECRET-token"}))
+    _set_public_view(app, True)
+    with _anon(app).websocket_connect("/ws", headers=LAN_HDRS) as ws:
+        raw = str(ws.receive_json())
+    assert "TOPSECRET" not in raw and store.secrets.session_secret not in raw
+
+
+def test_public_view_anonymous_action_is_view_only(app):
+    _set_public_view(app, True)
+    called = []
+
+    async def spy(entity_id, action_id):
+        called.append((entity_id, action_id))
+        return {"type": "action_result", "id": action_id, "ok": True}
+
+    app.state.hub.on_action = spy
+    with _anon(app).websocket_connect("/ws", headers=LAN_HDRS) as ws:
+        ws.receive_json()
+        ws.receive_json()
+        ws.send_json({"type": "action", "id": "a1", "entity_id": "light.kitchen"})
+        assert ws.receive_json() == {"type": "action_result", "id": "a1", "ok": False, "error": "view_only"}
+    assert called == []
+
+
+@pytest.mark.parametrize("origin", [None, "http://evil.example", "http://wallboard.local:8080", "null"])
+def test_public_view_anonymous_needs_same_origin(app, origin):
+    _set_public_view(app, True)
+    hdrs = {"host": LAN_HOST}
+    if origin:
+        hdrs["origin"] = origin
+    assert _ws_refused(_anon(app), hdrs) == 4403
+
+
+def test_public_view_admin_can_act(app):
+    _set_public_view(app, True)
+    called = []
+
+    async def spy(entity_id, action_id):
+        called.append(entity_id)
+        return {"type": "action_result", "id": action_id, "ok": True}
+
+    app.state.hub.on_action = spy
+    with _lan_admin(app, host=LAN_HOST).websocket_connect("/ws", headers=LAN_HDRS) as ws:
+        assert ws.receive_json()["type"] == "snapshot"
+        assert ws.receive_json() == {"type": "viewer", "can_act": True}
+        ws.send_json({"type": "action", "id": "a2", "entity_id": "light.kitchen"})
+        assert ws.receive_json()["ok"] is True
+    assert called == ["light.kitchen"]
+
+
+@pytest.mark.parametrize("public_view", [False, True])
+def test_kiosk_can_act(app, public_view):
+    _set_public_view(app, public_view)
+    with LocalClient(app, client=("127.0.0.1", 1)) as c:
+        with c.websocket_connect("/ws", headers={"origin": "http://localhost:8080"}) as ws:
+            assert ws.receive_json()["type"] == "snapshot"
+            assert ws.receive_json() == {"type": "viewer", "can_act": True}
+
+
+def test_public_view_keeps_admin_static_private(app):
+    _set_public_view(app, True)
+    c = _anon(app)
+    assert c.get("/static/admin/settings.js").status_code == 403
+    assert c.get("/settings", follow_redirects=False).status_code == 303
+
+
+def test_public_view_toggle_applies_live(app):
+    c = _anon(app)
+    assert c.get("/", follow_redirects=False).status_code == 303
+    _set_public_view(app, True)
+    assert c.get("/", follow_redirects=False).status_code == 200
+    _set_public_view(app, False)
+    assert c.get("/", follow_redirects=False).status_code == 303
+    assert c.get("/static/display/shell.js").status_code == 403

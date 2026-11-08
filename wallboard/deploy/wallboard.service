@@ -14,12 +14,18 @@ Type=simple
 User=@USER@
 WorkingDirectory=@REPO_DIR@
 Environment=PYTHONUNBUFFERED=1
-ExecStart=@VENV@/bin/python -m wallboard serve --data @DATA_DIR@ --port 8080
+# 8080 stays the main port (kiosk, /healthz, the Google OAuth redirect). Port 80 is extra, so
+# http://<hostname>.local/ works without :8080; if it cannot be bound, 8080 keeps serving.
+ExecStart=@VENV@/bin/python -m wallboard serve --data @DATA_DIR@ --port 8080 --extra-port 80
 Restart=always
 RestartSec=3
 
 # Hardening. The code and the venv under home stay readable; only the data dir is writable.
 NoNewPrivileges=yes
+# Only the right to listen on ports below 1024 (port 80); nothing else. Ambient capabilities
+# are granted at exec time, so they work together with NoNewPrivileges.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 PrivateTmp=yes
 ProtectSystem=full
 ProtectHome=read-only

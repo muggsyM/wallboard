@@ -605,3 +605,13 @@ def test_photos_shuffle_is_server_owned(app):
     assert c.put("/api/admin/photos/shuffle", json={"shuffle": "yes"}).status_code == 422
     assert client(app, csrf=False).put("/api/admin/photos/shuffle", json={"shuffle": False}).status_code == 403
     assert client(app, admin=False).put("/api/admin/photos/shuffle", json={"shuffle": False}).status_code == 401
+
+
+def test_public_view_is_part_of_settings_put(app):
+    c = client(app)
+    assert app.state.store.config.public_view is False
+    r = c.put("/api/admin/config", json=full_config(app, public_view=True))
+    assert r.status_code == 200 and r.json()["config"]["public_view"] is True
+    assert app.state.store.config.public_view is True
+    assert c.put("/api/admin/config", json=full_config(app, public_view=False)).status_code == 200
+    assert app.state.store.config.public_view is False

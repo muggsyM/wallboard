@@ -215,7 +215,7 @@ export default {
         const cfgs = (config?.quick_tiles || []).map((id) => byId.get(id)).filter(Boolean);
         tiles = cfgs.map((cfg) => {
           const node = el("div");
-          return { entityId: cfg.entity_id, node, handle: renderTile(node, cfg, state.ha?.[cfg.entity_id], () => ctx.store.sendAction(cfg.entity_id), { holdRotation: ctx.holdRotation }) };
+          return { entityId: cfg.entity_id, node, handle: renderTile(node, cfg, state.ha?.[cfg.entity_id], () => ctx.store.sendAction(cfg.entity_id), { holdRotation: ctx.holdRotation, canAct: ctx.canAct }) };
         });
         tilesEl.replaceChildren(...tiles.map((x) => x.node));
         tilesEl.hidden = tiles.length === 0;

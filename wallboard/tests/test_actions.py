@@ -132,7 +132,8 @@ def test_wiring_through_display_websocket(data_dir, monkeypatch):
         Config(tiles=[Tile(entity_id="light.kitchen", group="lights", controllable=True)])
     )
     with LocalClient(app, client=("127.0.0.1", 50000)) as c, c.websocket_connect("/ws") as ws:
-        ws.receive_json()
+        assert ws.receive_json()["type"] == "snapshot"
+        assert ws.receive_json() == {"type": "viewer", "can_act": True}
         ws.send_json({"type": "action", "id": "a1", "entity_id": "light.kitchen"})
         assert ws.receive_json() == {"type": "action_result", "id": "a1", "ok": True, "error": None}
         ws.send_json({"type": "action", "id": "a2", "entity_id": "light.other"})

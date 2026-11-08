@@ -210,8 +210,9 @@ cat <<EOF
  Wallboard installed.
 
  Server:    sudo systemctl status wallboard   (logs: journalctl -u wallboard -f)
- Settings:  http://$(hostname).local:8080/settings   (from a phone or laptop on the same network)
- Photos:    http://$(hostname).local:8080/photos
+ Settings:  http://$(hostname).local/settings   (from a phone or laptop on the same network)
+ Photos:    http://$(hostname).local/photos
+            (the same pages also answer on port 8080, e.g. http://$(hostname).local:8080/settings)
 
  Next: reboot to start the kiosk display:   sudo reboot
 

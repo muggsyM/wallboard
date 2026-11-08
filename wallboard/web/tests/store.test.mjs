@@ -223,3 +223,30 @@ test("snapshot exposes the server build id", () => {
   sockets[0].receive(SNAP);
   assert.equal(store.get().build, null);
 });
+
+test("viewer: can_act defaults to true and follows the server's viewer message", () => {
+  const { store, sockets } = setup();
+  assert.deepEqual(store.get().viewer, { can_act: true });
+  const changes = [];
+  store.subscribe((s, change) => changes.push([change, s.viewer.can_act]));
+  store.connect();
+  const ws = sockets[0];
+  ws.open();
+  ws.receive(SNAP);
+  assert.equal(store.get().viewer.can_act, true); // an older server sends no viewer message
+  ws.receive({ type: "viewer", can_act: false });
+  assert.deepEqual(store.get().viewer, { can_act: false });
+  ws.receive({ type: "viewer", can_act: true });
+  assert.deepEqual(store.get().viewer, { can_act: true });
+  assert.deepEqual(changes.slice(-2), [["viewer", false], ["viewer", true]]);
+});
+
+test("viewer: only an explicit false makes the display view-only", () => {
+  const { store, sockets } = setup();
+  store.connect();
+  sockets[0].open();
+  sockets[0].receive({ type: "viewer" });
+  assert.equal(store.get().viewer.can_act, true);
+  sockets[0].receive({ type: "viewer", can_act: false });
+  assert.equal(store.get().viewer.can_act, false);
+});

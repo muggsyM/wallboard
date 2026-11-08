@@ -1,4 +1,4 @@
-"""Display endpoints: GET /, WS /ws and loopback-only static mounts."""
+"""Display endpoints: GET /, WS /ws, /media and the guarded static mounts."""
 
 from __future__ import annotations
 
@@ -49,21 +49,19 @@ class GuardedStatic:
     """StaticFiles behind an access check (the HTTP dependencies don't cover mounts).
 
     Serves a valid admin session (the settings page imports display and shared modules) and,
-    when `loopback` is true, also the loopback display browser (loopback peer and Host).
+    when `display` is true, also the loopback display browser (loopback peer and Host) and,
+    while the public_view switch is on, any visitor (the board's own code and assets).
     """
 
-    def __init__(self, directory: Path, *, loopback: bool) -> None:
+    def __init__(self, directory: Path, *, display: bool) -> None:
         self._files = _RevalidatingStatic(directory=directory)
-        self._loopback = loopback
+        self._display = display
 
     def _allowed(self, scope) -> bool:
         conn = HTTPConnection(scope)
-        if self._loopback:
-            client = scope.get("client")
-            if client and client[0] in auth.LOOPBACK_HOSTS and auth.is_loopback_host_header(conn.headers.get("host")):
-                return True
-        secret = scope["app"].state.store.secrets.session_secret
-        return auth.valid_session_cookie(secret, conn.cookies.get(auth.COOKIE_NAME))
+        if self._display:
+            return auth.may_view_board(conn)
+        return auth.has_admin_session(conn)
 
     async def __call__(self, scope, receive, send) -> None:
         if scope["type"] != "http":
@@ -75,9 +73,9 @@ class GuardedStatic:
 
 
 def mount_static(app) -> None:
-    app.mount("/static/display", GuardedStatic(WEB_DIR / "display", loopback=True), name="static-display")
-    app.mount("/static/shared", GuardedStatic(WEB_DIR / "shared", loopback=True), name="static-shared")
-    app.mount("/static/admin", GuardedStatic(WEB_DIR / "admin", loopback=False), name="static-admin")
+    app.mount("/static/display", GuardedStatic(WEB_DIR / "display", display=True), name="static-display")
+    app.mount("/static/shared", GuardedStatic(WEB_DIR / "shared", display=True), name="static-shared")
+    app.mount("/static/admin", GuardedStatic(WEB_DIR / "admin", display=False), name="static-admin")
 
 
 @router.get("/", dependencies=[Depends(auth.require_display_viewer)])
@@ -85,23 +83,39 @@ async def index() -> FileResponse:
     return FileResponse(WEB_DIR / "display" / "index.html", headers=REVALIDATE)
 
 
-def _ws_allowed(ws: WebSocket) -> bool:
-    """The kiosk on the Pi (loopback peer, Host and Origin), or a logged-in admin whose
-    browser Origin matches the Host it connected to (blocks other sites riding the cookie)."""
+def _ws_role(ws: WebSocket) -> str | None:
+    """Who is connecting, decided once at connect time; None means refuse.
+
+    "kiosk": the browser on the Pi (loopback peer, Host and Origin).
+    "admin": a logged-in admin whose browser Origin matches the Host it connected to.
+    "viewer": anyone else with a same-origin Origin while public_view is on; view only.
+    The same-origin check is mandatory for every non-loopback socket: it stops other websites
+    from riding the cookie or reading the board through the visitor's browser.
+    """
     origin = ws.headers.get("origin")
     if auth.is_loopback_request(ws) and auth.is_allowed_display_origin(origin):
-        return True
-    return auth.has_admin_session(ws) and auth.is_same_origin(origin, ws.headers.get("host"))
+        return "kiosk"
+    if not auth.is_same_origin(origin, ws.headers.get("host")):
+        return None
+    if auth.has_admin_session(ws):
+        return "admin"
+    if auth.public_view_enabled(ws):
+        # Turning public_view off later does not close this socket; it is refused on its
+        # next reconnect. Acceptable: it could only ever view.
+        return "viewer"
+    return None
 
 
 @router.websocket("/ws")
 async def display_ws(ws: WebSocket) -> None:
     await ws.accept()
-    if not _ws_allowed(ws):
+    role = _ws_role(ws)
+    if role is None:
         await ws.close(code=WS_FORBIDDEN)
         return
+    can_act = role != "viewer"
     hub = ws.app.state.hub
-    await hub.connect(ws)
+    await hub.connect(ws, after=[{"type": "viewer", "can_act": can_act}])
     try:
         while True:
             frame = await ws.receive()
@@ -116,7 +130,9 @@ async def display_ws(ws: WebSocket) -> None:
             action_id, entity_id = msg.get("id"), msg.get("entity_id")
             if not isinstance(action_id, str) or not isinstance(entity_id, str):
                 continue
-            if hub.on_action is None:
+            if not can_act:
+                result = {"type": "action_result", "id": action_id, "ok": False, "error": "view_only"}
+            elif hub.on_action is None:
                 result = {"type": "action_result", "id": action_id, "ok": False, "error": "not available"}
             else:
                 try:
@@ -135,7 +151,7 @@ _MEDIA_RE = re.compile(r"[0-9a-f]{32}(\.bg|\.thumb)?\.jpg")
 
 @router.get("/media/{file}")
 async def media(file: str, request: Request) -> FileResponse:
-    if not auth.is_loopback_request(request) and not auth.has_admin_session(request):
+    if not auth.may_view_board(request):
         raise HTTPException(status_code=403, detail="forbidden")
     if not _MEDIA_RE.fullmatch(file):
         raise HTTPException(status_code=404, detail="not found")

@@ -1,8 +1,11 @@
 // Display data store fed by WS /ws: holds the latest snapshot plus deltas, reconnects
 // with backoff 1, 2, 4 ... 30 s, and sends tile actions.
 //
-//   store.get()            -> {build, config, ha, calendar, weather, photos, status, connected}
-//                             (build: the server's web/ hash from the last snapshot, or null)
+//   store.get()            -> {build, config, ha, calendar, weather, photos, status, viewer, connected}
+//                             (build: the server's web/ hash from the last snapshot, or null;
+//                             viewer: {can_act}, from the "viewer" message the server sends
+//                             right after each snapshot; false for a view-only visitor. It
+//                             defaults to true for servers that never send it.)
 //   store.subscribe(fn)    -> unsubscribe; fn(state, change) where change is the message
 //                             type ("snapshot", "ha", "config", ...) or "connected"
 //   store.sendAction(id)   -> Promise<{ok, error}>; rejects {ok:false, error:"timeout"} after
@@ -29,6 +32,7 @@ export function createStore({
     weather: null,
     photos: [],
     status: { ha: false, google: {} },
+    viewer: { can_act: true },
     connected: false,
   };
   const listeners = new Set();
@@ -62,6 +66,9 @@ export function createStore({
       case "ha":
         if (msg.state) state.ha[msg.entity_id] = msg.state;
         else delete state.ha[msg.entity_id];
+        return true;
+      case "viewer":
+        state.viewer = { can_act: msg.can_act !== false };
         return true;
       case "action_result": {
         const p = pending.get(msg.id);

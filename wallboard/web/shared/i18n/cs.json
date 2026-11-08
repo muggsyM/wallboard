@@ -109,6 +109,7 @@
   "admin_timezone": "Časové pásmo",
   "admin_rotation": "Sekund na stránku",
   "admin_touch_pause": "Pauza po dotyku (sekundy)",
+  "admin_public_view": "Zobrazit tabuli na jiných zařízeních bez hesla (jen prohlížení)",
   "admin_night": "Noční režim",
   "admin_night_enabled": "V noci ztlumit obrazovku",
   "admin_night_start": "Od",

@@ -108,6 +108,7 @@ function renderGeneral() {
       field(t("admin_rotation"), numberInput(c, "rotation_seconds", { min: 5 }), { loc: "rotation_seconds" }),
       field(t("admin_touch_pause"), numberInput(c, "touch_pause_seconds", { min: 15 }), { loc: "touch_pause_seconds" }),
     ),
+    field(t("admin_public_view"), checkbox(c, "public_view"), { loc: "public_view", inline: true }),
     h("h3", { text: t("admin_night") }),
     field(t("admin_night_enabled"), checkbox(c.night, "enabled"), { loc: "night.enabled", inline: true }),
     h(

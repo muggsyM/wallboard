@@ -42,6 +42,15 @@ test("non-controllable tiles ignore taps", () => {
   assert.equal(tap(IDLE, "light.kitchen", ha("on"), false), IDLE);
 });
 
+test("view-only (canAct false) ignores taps; canAct true or absent acts", () => {
+  const ev = { type: "tap", entityId: "light.kitchen", haState: ha("on"), controllable: true };
+  const ignored = tileReducer(IDLE, { ...ev, canAct: false });
+  assert.equal(ignored, IDLE); // same object: no pending, no spinner, nothing to draw
+  assert.equal(tileView({ entity_id: "light.kitchen" }, ha("on"), ignored).pending, false);
+  assert.equal(tileReducer(IDLE, { ...ev, canAct: true }).pending, true);
+  assert.equal(tileReducer(IDLE, ev).pending, true); // existing callers pass no canAct
+});
+
 test("ok result keeps pending until HA reports a change", () => {
   let s = tap(IDLE, "light.kitchen", ha("on"));
   s = tileReducer(s, { type: "result", token: s.token, ok: true });

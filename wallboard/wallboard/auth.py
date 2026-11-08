@@ -150,11 +150,27 @@ def require_loopback(request: Request) -> None:
         raise HTTPException(status_code=403, detail="forbidden")
 
 
+def public_view_enabled(conn: HTTPConnection) -> bool:
+    """Settings switch: anyone on the LAN may view (never control) the board without a login.
+
+    Read live from the config store on every request or connection, so toggling it in Settings
+    applies without a restart."""
+    return bool(conn.app.state.store.config.public_view)
+
+
+def may_view_board(conn: HTTPConnection) -> bool:
+    """The kiosk on the Pi, a logged-in admin, or anyone when public_view is on (HTTP only;
+    WebSockets also need a same-origin Origin, see routes/display.py)."""
+    return is_loopback_request(conn) or has_admin_session(conn) or public_view_enabled(conn)
+
+
 def require_display_viewer(request: Request) -> None:
-    """The kiosk on the Pi, or a logged-in admin viewing the board from another device."""
-    if is_loopback_request(request):
+    """The kiosk on the Pi, a logged-in admin viewing the board from another device, or (with
+    public_view on) any visitor; otherwise a redirect to the login page."""
+    if is_loopback_request(request) or public_view_enabled(request):
         return
     require_admin(request)
+
 
 class LoginLimiter:
     """In-memory login-attempt throttle per client IP.

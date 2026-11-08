@@ -1,6 +1,6 @@
 // Tap tile shared by the Today quick-tiles row and the Home page.
 //
-//   const tile = renderTile(el, tileCfg, haState, onTap, { holdRotation } = {})
+//   const tile = renderTile(el, tileCfg, haState, onTap, { holdRotation, canAct } = {})
 //   tile.update(haState)   call on every store update with state.ha[tileCfg.entity_id]
 //   tile.destroy()         stops timers and listeners; later action results are ignored
 //
@@ -11,6 +11,9 @@
 // promise, normally () => ctx.store.sendAction(tileCfg.entity_id). Pass the page's
 // ctx.holdRotation: each accepted tap calls holdRotation(PENDING_MAX_MS) so rotation cannot
 // page away while the tile is pending (5 s action timeout + 5 s safety timer).
+// `canAct()` (optional, default: always true) is asked on every draw and tap; pass
+// () => ctx.canAct(). When it returns false (a view-only visitor) the tile gets the
+// view-only class (no pressed look) and a tap does nothing: no spinner, no toast, no action.
 //
 // Controllable tiles get the data-tap attribute (the shell then does not change page) and a
 // pressed look. A tap shows the optimistic state with a spinner and calls onTap(); further
@@ -32,7 +35,7 @@ function node(tag, cls) {
   return n;
 }
 
-export function renderTile(el, cfg, haState, onTap, { holdRotation } = {}) {
+export function renderTile(el, cfg, haState, onTap, { holdRotation, canAct = () => true } = {}) {
   let s = IDLE;
   let ha = haState;
   let alive = true;
@@ -52,7 +55,8 @@ export function renderTile(el, cfg, haState, onTap, { holdRotation } = {}) {
 
   function draw() {
     const v = tileView(cfg, ha, s);
-    const key = JSON.stringify(v);
+    const viewOnly = Boolean(cfg.controllable) && !canAct();
+    const key = JSON.stringify([v, viewOnly]);
     if (key === drawn) return;
     drawn = key;
     icon.className = `mdi ${v.icon}`;
@@ -61,6 +65,7 @@ export function renderTile(el, cfg, haState, onTap, { holdRotation } = {}) {
     el.classList.toggle("on", v.tone === "on");
     el.classList.toggle("run", v.tone === "run");
     el.classList.toggle("pending", v.pending);
+    el.classList.toggle("view-only", viewOnly);
     // The spinner exists only while pending, so its animation never runs otherwise.
     if (v.pending) small.prepend(spin);
     else spin.remove();
@@ -93,7 +98,7 @@ export function renderTile(el, cfg, haState, onTap, { holdRotation } = {}) {
 
   function tap() {
     const before = s.token;
-    dispatch({ type: "tap", entityId: cfg.entity_id, haState: ha, controllable: Boolean(cfg.controllable) });
+    dispatch({ type: "tap", entityId: cfg.entity_id, haState: ha, controllable: Boolean(cfg.controllable), canAct: canAct() });
     if (s.token === before) return; // ignored
     const token = s.token;
     holdRotation?.(PENDING_MAX_MS);
@@ -105,7 +110,7 @@ export function renderTile(el, cfg, haState, onTap, { holdRotation } = {}) {
   const onDown = (e) => {
     if (!e.isPrimary) return;
     press = { x: e.clientX, y: e.clientY, t: Date.now() };
-    el.classList.add("pressed");
+    if (canAct()) el.classList.add("pressed");
   };
   const onUp = (e) => {
     if (!e.isPrimary || !press) return;

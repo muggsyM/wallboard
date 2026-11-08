@@ -109,6 +109,7 @@
   "admin_timezone": "Time zone",
   "admin_rotation": "Seconds per page",
   "admin_touch_pause": "Pause after a touch (seconds)",
+  "admin_public_view": "Show the board on other devices without a password (view only)",
   "admin_night": "Night mode",
   "admin_night_enabled": "Dim the screen at night",
   "admin_night_start": "From",
