@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 import secrets as _secrets
@@ -119,6 +121,13 @@ class Config(BaseModel):
                     "quick_tile_not_in_tiles", "quick_tiles not present in tiles: {missing}", {"missing": ", ".join(missing)}
                 )
         return v
+
+
+def config_revision(cfg: Config) -> str:
+    """Short stable hash of a config: the settings page sends it back on save (If-Match) so a
+    save from an out-of-date page is refused instead of overwriting newer settings."""
+    canonical = json.dumps(cfg.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 
 class Secrets(BaseModel):

@@ -124,3 +124,43 @@ test("googleBadge: expired only for expired, calm note for error", () => {
   assert.equal(M.googleBadge("ok", { expired: true }), "expired");
   assert.equal(M.googleBadge(false, undefined), null); // old boolean status is not trusted
 });
+
+test("isStaleError and ifMatch", () => {
+  assert.equal(M.isStaleError({ status: 409, errors: [{ type: "stale_config", loc: [], msg: "x" }] }), true);
+  assert.equal(M.isStaleError({ status: 409, errors: null }), false); // e.g. HA not connected
+  assert.equal(M.isStaleError({ status: 422, errors: [{ type: "stale_config" }] }), false);
+  assert.equal(M.isStaleError(undefined), false);
+  assert.deepEqual(M.ifMatch("abc123"), { "If-Match": '"abc123"' });
+  assert.deepEqual(M.ifMatch(null), { "If-Match": '""' });
+});
+
+test("errorText maps stale_config in both languages", () => {
+  for (const lang of ["cs", "en"]) {
+    setStrings(lang, JSON.parse(readFileSync(new URL(`../shared/i18n/${lang}.json`, import.meta.url), "utf8")));
+    setLanguage(lang);
+    const text = M.errorText({ type: "stale_config", loc: [], msg: "Settings were changed elsewhere; reload." }, t);
+    assert.notEqual(text, "Settings were changed elsewhere; reload.");
+    assert.ok(text.length > 10);
+  }
+});
+
+test("onlyServerOwnedChanged: Google accounts and shuffle yes, anything else no", () => {
+  const base = {
+    language: "cs",
+    google_accounts: [{ id: "g1", email: "a@x", member_id: "a" }],
+    calendars: [{ account_id: "g1", calendar_id: "c", name: "C", member_id: "a", enabled: true }],
+    pages: [{ type: "today", enabled: true, seconds: null, options: {} }],
+    photos_shuffle: false,
+  };
+  const copy = () => structuredClone(base);
+  assert.equal(M.onlyServerOwnedChanged(base, copy()), true);
+  assert.equal(M.onlyServerOwnedChanged(base, { ...copy(), photos_shuffle: true }), true);
+  assert.equal(M.onlyServerOwnedChanged(base, { ...copy(), google_accounts: [...base.google_accounts, { id: "g2", email: "b@x", member_id: "a" }] }), true);
+  // disconnect drops that account's calendars with it
+  assert.equal(M.onlyServerOwnedChanged(base, { ...copy(), google_accounts: [], calendars: [] }), true);
+  // the incident: a page added elsewhere
+  assert.equal(M.onlyServerOwnedChanged(base, { ...copy(), pages: [...base.pages, { type: "photos", enabled: true, seconds: 60, options: {} }] }), false);
+  assert.equal(M.onlyServerOwnedChanged(base, { ...copy(), language: "en" }), false);
+  assert.equal(M.onlyServerOwnedChanged(base, { ...copy(), calendars: [] }), false); // calendar change with the account kept
+  assert.equal(M.onlyServerOwnedChanged(null, copy()), false);
+});

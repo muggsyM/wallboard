@@ -13,9 +13,10 @@ export class ApiError extends Error {
   }
 }
 
-// `keepalive` lets a request finish after the page is closed (used for delayed deletes).
-export async function api(method, path, body, { keepalive = false } = {}) {
-  const headers = method === "GET" ? {} : { ...CSRF };
+// `keepalive` lets a request finish after the page is closed (used for delayed deletes);
+// `headers` adds request headers (the settings page sends If-Match with a config save).
+export async function api(method, path, body, { keepalive = false, headers: extra = {} } = {}) {
+  const headers = method === "GET" ? { ...extra } : { ...extra, ...CSRF };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const res = await fetch(path, {
     method,

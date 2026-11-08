@@ -25,6 +25,36 @@ export function errorText(err, tr) {
   return err.msg;
 }
 
+// A 409 from PUT /api/admin/config: the page's revision is out of date (saved elsewhere).
+export const isStaleError = (e) => e?.status === 409 && !!e.errors?.some((x) => x.type === "stale_config");
+
+// `If-Match` header value for a config revision.
+export const ifMatch = (revision) => ({ "If-Match": `"${revision || ""}"` });
+
+// Did only server-owned fields change between two configs from the server? Those are the
+// Google accounts (plus the calendars of a disconnected account, which the server drops with
+// it) and photos_shuffle; a config save never writes them, so the page can take the newer
+// revision without losing or overwriting anything.
+export function onlyServerOwnedChanged(oldCfg, newCfg) {
+  if (!oldCfg || !newCfg) return false;
+  const ids = new Set((newCfg.google_accounts || []).map((a) => a.id));
+  const expected = {
+    ...oldCfg,
+    google_accounts: newCfg.google_accounts,
+    calendars: (oldCfg.calendars || []).filter((c) => ids.has(c.account_id)),
+    photos_shuffle: newCfg.photos_shuffle,
+  };
+  return sameJson(expected, newCfg);
+}
+
+function sorted(v) {
+  if (Array.isArray(v)) return v.map(sorted);
+  if (v && typeof v === "object") return Object.fromEntries(Object.keys(v).sort().map((k) => [k, sorted(v[k])]));
+  return v;
+}
+
+const sameJson = (a, b) => JSON.stringify(sorted(a)) === JSON.stringify(sorted(b));
+
 export const locKey = (loc) => (loc || []).join(".");
 
 // The most specific key that has a field on the page: ["members", 2, "color"] tries

@@ -4,6 +4,12 @@
 // back with PUT /api/admin/config on Save (secrets go separately to PUT /api/admin/secrets
 // and are never prefilled). All DOM is built with h() / textContent; no innerHTML with data.
 // Every write carries X-Requested-With: wallboard (the server rejects admin writes without it).
+//
+// Stale-save protection: every GET/PUT of the config returns its `revision`; Save sends it back
+// as If-Match and the server answers 409 stale_config when the config changed elsewhere since
+// (another device, a Google sign-in, the photos shuffle switch). Then nothing is saved and a
+// banner offers to reload. When the tab comes back into view the page re-fetches the config:
+// silently without unsaved changes, otherwise it shows the same banner before Save is pressed.
 
 import { PAGES, getPage } from "/static/display/pages/registry.js";
 import { t, setLanguage, loadLanguage } from "/static/shared/i18n.js";
@@ -16,7 +22,11 @@ const MEMBER_COLORS = ["#4f8cff", "#ff6b9d", "#ffb547", "#4cd4a0", "#b18cff", "#
 const SECRET_FIELDS = ["ha_token", "google_client_id", "google_client_secret"];
 
 const S = {
-  view: null, // last GET/PUT response: {config, secrets_set, status, controllable_domains}
+  view: null, // last GET/PUT response: {config, revision, secrets_set, status, controllable_domains}
+  revision: null, // revision S.config is based on; sent as If-Match on Save
+  stale: false, // the server's config moved on since `revision`; Save is refused until reload
+  saving: false,
+  saves: 0, // count of config saves started; a refresh that overlapped one is dropped
   config: null, // the working copy being edited
   draft: { ha_token: "", google_client_id: "", google_client_secret: "", current_password: "", admin_password: "", admin_password2: "" },
   entities: null, // [{entity_id, name, domain}] or null when HA is not connected
@@ -31,6 +41,7 @@ const $ = (sel) => document.querySelector(sel);
 
 function markDirty() {
   S.dirty = true;
+  if (S.stale) return; // keep the banner's message; Save stays off until reload
   $("#save").disabled = false;
   setStatus(t("admin_unsaved"));
 }
@@ -323,13 +334,28 @@ async function connectGoogle(memberId) {
 
 // After the Google routes change accounts, take the server's accounts (and calendars for a
 // removed account) without discarding other unsaved edits.
+// The page's revision moves on with it only when nothing but server-owned fields changed
+// (a config save never writes those); anything else changed elsewhere makes the page stale.
 async function refreshGoogle() {
   const view = await api("GET", "/api/admin/config");
+  if (isClean()) await takeServerView(view);
+  else mergeServerOwned(view);
+}
+
+// No unsaved edits, no typed secrets, no stale banner: the page may be replaced from the server.
+const isClean = () => !S.dirty && !S.stale && Object.values(S.draft).every((v) => !v);
+
+function mergeServerOwned(view) {
+  const base = S.view.config;
   S.view = { ...S.view, secrets_set: view.secrets_set, status: view.status, config: view.config };
   S.config.google_accounts = view.config.google_accounts;
+  S.config.photos_shuffle = view.config.photos_shuffle;
   const ids = new Set(view.config.google_accounts.map((a) => a.id));
   S.config.calendars = S.config.calendars.filter((c) => ids.has(c.account_id));
   for (const id of Object.keys(S.calendars)) if (!ids.has(id)) delete S.calendars[id];
+  if (view.revision === S.revision) return;
+  if (!S.stale && M.onlyServerOwnedChanged(base, view.config)) S.revision = view.revision;
+  else showStale();
 }
 
 async function pasteGoogle(input) {
@@ -661,16 +687,19 @@ async function save() {
   $("#save").disabled = true;
   setStatus(t("admin_saving"));
   const oldLang = S.view.config.language;
+  S.saving = true;
+  S.saves++;
   try {
-    const view = await api("PUT", "/api/admin/config", M.cleanConfig(S.config));
-    S.view = view;
-    S.config = structuredClone(view.config);
-    S.dirty = false;
+    const view = await api("PUT", "/api/admin/config", M.cleanConfig(S.config), { headers: M.ifMatch(S.revision) });
+    adopt(view);
     if (view.config.language !== oldLang) await useLanguage(view.config.language);
     renderAll(); // typed secrets live in S.draft, so they survive this re-render
   } catch (e) {
-    saveFailed(e);
+    if (M.isStaleError(e)) showStale(); // nothing saved; secrets are not sent either
+    else saveFailed(e);
     return;
+  } finally {
+    S.saving = false;
   }
   let passwordChanged = false;
   if (Object.keys(secrets).length) {
@@ -688,6 +717,105 @@ async function save() {
   }
   setStatus(passwordChanged ? t("admin_password_changed") : t("admin_saved"), "ok");
   loadEntities(4); // HA may have restarted with a new URL/token
+}
+
+// Take a GET/PUT response as the new saved state: the working copy restarts from it.
+function adopt(view) {
+  S.view = view;
+  S.config = structuredClone(view.config);
+  S.revision = view.revision;
+  S.dirty = false;
+}
+
+// ---- stale config: banner, reload, refresh on return ------------------------------------------
+
+function showStale() {
+  S.stale = true;
+  $("#save").disabled = true;
+  setStatus(errorText({ type: "stale_config", msg: "Settings were changed elsewhere; reload." }), "error");
+  renderBanner();
+}
+
+function renderBanner() {
+  const el = $("#banner");
+  if (!S.stale) {
+    el.hidden = true;
+    el.replaceChildren();
+    return;
+  }
+  el.hidden = false;
+  el.replaceChildren(
+    h("p", { text: t("admin_stale_banner") }),
+    button(t("admin_stale_reload"), reloadConfig, "", { title: t("admin_stale_reload_title") }),
+  );
+}
+
+// Re-render everything from S, keeping the scroll position.
+function renderKeepingScroll() {
+  const y = window.scrollY;
+  renderAll();
+  window.scrollTo(0, y);
+}
+
+// The banner's button: drop the draft (edits and typed secrets) and start from the server's config.
+async function reloadConfig() {
+  let view;
+  try {
+    view = await api("GET", "/api/admin/config");
+  } catch (e) {
+    setStatus(t("admin_error", { msg: e.message }), "error");
+    return;
+  }
+  const oldLang = S.view.config.language;
+  adopt(view);
+  for (const k of Object.keys(S.draft)) S.draft[k] = "";
+  S.stale = false;
+  S.haTest = null;
+  if (view.config.language !== oldLang) await useLanguage(view.config.language);
+  renderBanner();
+  clearErrors();
+  renderKeepingScroll();
+  $("#save").disabled = true;
+  setStatus("");
+}
+
+// On focus / tab visible again. Without unsaved changes, silently take a newer config; with
+// them, warn before Save when the config changed elsewhere (server-owned fields only — e.g.
+// this page's own Google sign-in in another tab — are merged without a warning).
+let checking = null;
+function checkForUpdates() {
+  checking ||= doCheckForUpdates().finally(() => (checking = null));
+  return checking;
+}
+
+async function doCheckForUpdates() {
+  if (S.saving || !S.view) return;
+  const connecting = S.connecting;
+  const saves = S.saves;
+  S.connecting = false;
+  let view;
+  try {
+    view = await api("GET", "/api/admin/config");
+  } catch {
+    return; // keep the current view
+  }
+  // A save started meanwhile: this GET may predate it; the save reports its own result.
+  if (S.saving || S.saves !== saves) return;
+  if (isClean()) {
+    if (view.revision !== S.revision || connecting) await takeServerView(view);
+    return;
+  }
+  mergeServerOwned(view);
+  rerender("google");
+}
+
+// Replace the (clean) page with a newer server config.
+async function takeServerView(view) {
+  const oldLang = S.view.config.language;
+  adopt(view);
+  for (const id of Object.keys(S.calendars)) if (!view.config.google_accounts.some((a) => a.id === id)) delete S.calendars[id];
+  if (view.config.language !== oldLang) await useLanguage(view.config.language);
+  renderKeepingScroll();
 }
 
 async function useLanguage(lang) {
@@ -708,6 +836,7 @@ async function init() {
     return;
   }
   S.config = structuredClone(S.view.config);
+  S.revision = S.view.revision;
   await useLanguage(S.config.language);
 
   const params = new URLSearchParams(location.search);
@@ -724,15 +853,9 @@ async function init() {
       e.returnValue = t("admin_leave_unsaved");
     }
   });
-  window.addEventListener("focus", async () => {
-    if (!S.connecting) return;
-    S.connecting = false;
-    try {
-      await refreshGoogle();
-      rerender("google");
-    } catch {
-      /* keep the current view */
-    }
+  window.addEventListener("focus", () => checkForUpdates());
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") checkForUpdates();
   });
   if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView();
   loadEntities();

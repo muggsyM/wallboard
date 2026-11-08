@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from wallboard import auth, google_oauth
 from wallboard.app import create_app
-from wallboard.config import CalendarRef, GoogleAccount, Member, Tile
+from wallboard.config import CalendarRef, GoogleAccount, Member, Tile, config_revision
 from wallboard.ha_client import HAClient
 
 _spec = importlib.util.spec_from_file_location(
@@ -66,6 +66,17 @@ def client(app, peer=("192.168.1.5", 50000), host="192.168.1.10:8080", admin=Tru
     return c
 
 
+def if_match(revision):
+    return {"If-Match": f'"{revision}"'}
+
+
+def put_config(c, body, revision=None, headers=None):
+    """PUT /api/admin/config as the settings page does: with If-Match of the stored config
+    (or of `revision`, to play an out-of-date page)."""
+    rev = revision if revision is not None else config_revision(c.app.state.store.config)
+    return c.put("/api/admin/config", json=body, headers={**if_match(rev), **(headers or {})})
+
+
 def full_config(app, **update):
     data = app.state.store.config.model_dump(mode="json")
     data.update(update)
@@ -101,19 +112,19 @@ def test_put_config_validates_and_publishes(app):
     asyncio.run(app.state.hub.connect(sock))
     sock.messages.clear()
 
-    r = c.put("/api/admin/config", json=full_config(app, rotation_seconds=2))
+    r = put_config(c, full_config(app, rotation_seconds=2))
     assert r.status_code == 422
     assert ["rotation_seconds"] in [e["loc"] for e in r.json()["detail"]]
-    r = c.put("/api/admin/config", json=full_config(app, quick_tiles=["light.nope"]))
+    r = put_config(c, full_config(app, quick_tiles=["light.nope"]))
     assert r.status_code == 422
     assert ["quick_tiles"] in [e["loc"] for e in r.json()["detail"]]
-    r = c.put("/api/admin/config", json=full_config(app, members=[{"id": "x", "name": "X", "initial": "X"}]))
+    r = put_config(c, full_config(app, members=[{"id": "x", "name": "X", "initial": "X"}]))
     assert r.status_code == 422
     assert ["members", 0, "color"] in [e["loc"] for e in r.json()["detail"]]
     assert app.state.store.config.rotation_seconds == 30
     assert sock.messages == []
 
-    r = c.put("/api/admin/config", json=full_config(app, language="en", rotation_seconds=45))
+    r = put_config(c, full_config(app, language="en", rotation_seconds=45))
     assert r.status_code == 200, r.text
     assert r.json()["config"]["language"] == "en"
     assert app.state.store.config.language == "en"
@@ -137,7 +148,7 @@ def test_secrets_write_only(app):
     assert app.state.store.secrets.session_secret not in r.text
     assert "scrypt$" not in r.text
     assert body["secrets_set"] == {"ha_token": True, "google_client": False, "admin_password": True}
-    assert set(body) == {"config", "secrets_set", "status", "controllable_domains"}
+    assert set(body) == {"config", "revision", "secrets_set", "status", "controllable_domains"}
     assert "light" in body["controllable_domains"] and body["controllable_domains"] == sorted(body["controllable_domains"])
     c.put("/api/admin/secrets", json={"google_client_id": "cid"})
     assert c.get("/api/admin/config").json()["secrets_set"]["google_client"] is True
@@ -156,20 +167,20 @@ def test_empty_secret_keeps_old(app):
 def test_ha_change_restarts_client(app):
     c = client(app)
     spy = app.state.restart_spy
-    assert c.put("/api/admin/config", json=full_config(app, language="en")).status_code == 200
+    assert put_config(c, full_config(app, language="en")).status_code == 200
     assert spy.calls == 0  # unrelated change
-    assert c.put("/api/admin/config", json=full_config(app, ha_url="http://ha.local:8123")).status_code == 200
+    assert put_config(c, full_config(app, ha_url="http://ha.local:8123")).status_code == 200
     assert spy.calls == 1
     tiles = [Tile(entity_id="light.kitchen", group="lights").model_dump()]
-    assert c.put("/api/admin/config", json=full_config(app, tiles=tiles)).status_code == 200
+    assert put_config(c, full_config(app, tiles=tiles)).status_code == 200
     assert spy.calls == 2  # wanted entity set changed
-    assert c.put("/api/admin/config", json=full_config(app, weather_entity="weather.home")).status_code == 200
+    assert put_config(c, full_config(app, weather_entity="weather.home")).status_code == 200
     assert spy.calls == 3
     assert c.put("/api/admin/secrets", json={"ha_token": "new"}).status_code == 200
     assert spy.calls == 4
     assert c.put("/api/admin/secrets", json={"ha_token": "new"}).status_code == 200
     assert spy.calls == 4  # unchanged token
-    assert c.put("/api/admin/config", json=full_config(app, timezone="Europe/London")).status_code == 200
+    assert put_config(c, full_config(app, timezone="Europe/London")).status_code == 200
     assert spy.calls == 5  # forecast dates follow the timezone
 
 
@@ -287,12 +298,12 @@ def test_client_cannot_inject_google_accounts(app):
     with_family(app)
     c = client(app)
     evil = full_config(app, google_accounts=[{"id": "g_evil", "email": "evil@x.cz", "member_id": "bob"}])
-    r = c.put("/api/admin/config", json=evil)
+    r = put_config(c, evil)
     assert r.status_code == 200, r.text
     accts = app.state.store.config.google_accounts
     assert [(a.id, a.email, a.member_id) for a in accts] == [("g_a", "anna@gmail.com", "anna")]
     # dropping the list does not disconnect anything either
-    assert c.put("/api/admin/config", json=full_config(app, google_accounts=[])).status_code == 200
+    assert put_config(c, full_config(app, google_accounts=[])).status_code == 200
     assert [a.id for a in app.state.store.config.google_accounts] == ["g_a"]
     # admin GET shows the email (the page shows which Gmail is connected)
     assert c.get("/api/admin/config").json()["config"]["google_accounts"][0]["email"] == "anna@gmail.com"
@@ -303,11 +314,11 @@ def test_calendar_needs_known_account(app):
     cals = full_config(app)["calendars"] + [
         {"account_id": "g_nope", "calendar_id": "x", "name": "X", "member_id": "anna", "enabled": True}
     ]
-    r = client(app).put("/api/admin/config", json=full_config(app, calendars=cals))
+    r = put_config(client(app), full_config(app, calendars=cals))
     assert r.status_code == 422
     assert ["calendars", 2, "account_id"] in [e["loc"] for e in r.json()["detail"]]
     cals = [{"account_id": "g_a", "calendar_id": "x", "name": "X", "member_id": "ghost", "enabled": True}]
-    r = client(app).put("/api/admin/config", json=full_config(app, calendars=cals))
+    r = put_config(client(app), full_config(app, calendars=cals))
     assert r.status_code == 422
     assert ["calendars", 0, "member_id"] in [e["loc"] for e in r.json()["detail"]]
 
@@ -317,7 +328,7 @@ def test_member_delete_cascades_calendars(app):
     c = client(app)
     data = full_config(app)
     data["members"] = [m for m in data["members"] if m["id"] != "bob"]
-    r = c.put("/api/admin/config", json=data)  # client still sends bob's calendar
+    r = put_config(c, data)  # client still sends bob's calendar
     assert r.status_code == 200, r.text
     cfg = app.state.store.config
     assert [m.id for m in cfg.members] == ["anna"]
@@ -328,7 +339,7 @@ def test_member_with_google_account_cannot_be_deleted(app):
     with_family(app)
     data = full_config(app)
     data["members"] = [m for m in data["members"] if m["id"] != "anna"]
-    r = client(app).put("/api/admin/config", json=data)
+    r = put_config(client(app), data)
     assert r.status_code == 422
     err = r.json()["detail"][0]
     assert err["loc"] == ["members"] and "anna@gmail.com" in err["msg"]
@@ -337,14 +348,14 @@ def test_member_with_google_account_cannot_be_deleted(app):
 
 def test_duplicate_member_ids_rejected(app):
     members = [{"id": "x", "name": "A", "initial": "A", "color": "#000000"}] * 2
-    r = client(app).put("/api/admin/config", json=full_config(app, members=members))
+    r = put_config(client(app), full_config(app, members=members))
     assert r.status_code == 422
     assert ["members", 1, "id"] in [e["loc"] for e in r.json()["detail"]]
 
 
 def test_put_config_requires_admin_and_object(app):
-    assert client(app, admin=False).put("/api/admin/config", json=full_config(app)).status_code == 401
-    assert client(app).put("/api/admin/config", json=[1]).status_code == 422
+    assert put_config(client(app, admin=False), full_config(app)).status_code == 401
+    assert put_config(client(app), [1]).status_code == 422
     r = client(app).put("/api/admin/config", content=b"{nope", headers={"Content-Type": "application/json"})
     assert r.status_code == 422
 
@@ -405,18 +416,18 @@ def test_google_client_change_clears_token_cache(app):
 
 def test_admin_writes_require_csrf_header(app):
     c = client(app, csrf=False)
-    assert c.put("/api/admin/config", json=full_config(app)).status_code == 403
+    assert put_config(c, full_config(app)).status_code == 403
     assert c.put("/api/admin/secrets", json={"ha_token": "x"}).status_code == 403
     assert c.post("/api/admin/ha/test", json={"url": "http://x"}).status_code == 403
     assert c.delete("/api/admin/google/g_a").status_code == 403
     assert c.post("/api/admin/albums", json={"name": "x"}).status_code == 403
-    r = c.put("/api/admin/config", json=full_config(app), headers={"X-Requested-With": "XMLHttpRequest"})
+    r = put_config(c, full_config(app), headers={"X-Requested-With": "XMLHttpRequest"})
     assert r.status_code == 403
     assert app.state.store.secrets.ha_token is None
     assert c.get("/api/admin/config").status_code == 200  # reads need no header
     # unauthenticated writes still get 401 first
-    assert client(app, admin=False, csrf=False).put("/api/admin/config", json={}).status_code == 401
-    assert client(app).put("/api/admin/config", json=full_config(app)).status_code == 200
+    assert put_config(client(app, admin=False, csrf=False), {}).status_code == 401
+    assert put_config(client(app), full_config(app)).status_code == 200
 
 
 # ---- pages and static files ---------------------------------------------------------------
@@ -463,7 +474,7 @@ def with_ha(app, url="http://ha.local:8123", token="tok-OLD"):
 )
 def test_ha_url_origin_change_clears_token(app, new_url):
     with_ha(app)
-    r = client(app).put("/api/admin/config", json=full_config(app, ha_url=new_url))
+    r = put_config(client(app), full_config(app, ha_url=new_url))
     assert r.status_code == 200, r.text
     assert app.state.store.secrets.ha_token is None
     assert r.json()["secrets_set"]["ha_token"] is False
@@ -474,19 +485,19 @@ def test_ha_url_origin_change_clears_token(app, new_url):
 )
 def test_ha_url_same_origin_keeps_token(app, new_url):
     with_ha(app)
-    assert client(app).put("/api/admin/config", json=full_config(app, ha_url=new_url)).status_code == 200
+    assert put_config(client(app), full_config(app, ha_url=new_url)).status_code == 200
     assert app.state.store.secrets.ha_token == "tok-OLD"
 
 
 def test_ha_url_default_port_is_same_origin(app):
     with_ha(app, url="http://ha.local")
-    assert client(app).put("/api/admin/config", json=full_config(app, ha_url="http://ha.local:80")).status_code == 200
+    assert put_config(client(app), full_config(app, ha_url="http://ha.local:80")).status_code == 200
     assert app.state.store.secrets.ha_token == "tok-OLD"
 
 
 def test_ha_url_first_set_clears_unbound_token(app):
     with_ha(app, url=None)
-    client(app).put("/api/admin/config", json=full_config(app, ha_url="http://ha.local:8123"))
+    put_config(client(app), full_config(app, ha_url="http://ha.local:8123"))
     assert app.state.store.secrets.ha_token is None
 
 
@@ -494,7 +505,7 @@ def test_url_and_new_token_in_one_save(app):
     """The page saves config first, then secrets, so a token typed with a new URL survives."""
     with_ha(app)
     c = client(app)
-    assert c.put("/api/admin/config", json=full_config(app, ha_url="http://new.local:8123")).status_code == 200
+    assert put_config(c, full_config(app, ha_url="http://new.local:8123")).status_code == 200
     assert c.put("/api/admin/secrets", json={"ha_token": "tok-NEW"}).status_code == 200
     assert app.state.store.secrets.ha_token == "tok-NEW"
     assert app.state.store.config.ha_url == "http://new.local:8123"
@@ -561,27 +572,27 @@ def test_error_types_are_stable(app):
     c = client(app)
     data = full_config(app)
     data["members"] = [m for m in data["members"] if m["id"] != "anna"]
-    err = c.put("/api/admin/config", json=data).json()["detail"][0]
+    err = put_config(c, data).json()["detail"][0]
     assert err["type"] == "member_has_google_account"
     assert err["ctx"] == {"name": "Anna", "email": "anna@gmail.com"}
 
     def types(r):
         return [e["type"] for e in r.json()["detail"]]
 
-    assert types(c.put("/api/admin/config", json=full_config(app, timezone="Mars/Base"))) == ["unknown_timezone"]
-    assert types(c.put("/api/admin/config", json=full_config(app, quick_tiles=["x.y"]))) == ["quick_tile_not_in_tiles"]
+    assert types(put_config(c, full_config(app, timezone="Mars/Base"))) == ["unknown_timezone"]
+    assert types(put_config(c, full_config(app, quick_tiles=["x.y"]))) == ["quick_tile_not_in_tiles"]
     tiles = [{"entity_id": f"light.l{i}", "group": "lights"} for i in range(5)]
-    r = c.put("/api/admin/config", json=full_config(app, tiles=tiles, quick_tiles=[t["entity_id"] for t in tiles]))
+    r = put_config(c, full_config(app, tiles=tiles, quick_tiles=[t["entity_id"] for t in tiles]))
     assert types(r) == ["too_many_quick_tiles"]
-    r = c.put("/api/admin/config", json=full_config(app, rotation_seconds=1))
+    r = put_config(c, full_config(app, rotation_seconds=1))
     assert types(r) == ["greater_than_equal"] and r.json()["detail"][0]["ctx"] == {"ge": 5}
     members = full_config(app)["members"]
     members = members + [members[1]]
-    assert types(c.put("/api/admin/config", json=full_config(app, members=members))) == ["duplicate_member_id"]
+    assert types(put_config(c, full_config(app, members=members))) == ["duplicate_member_id"]
     cals = [{"account_id": "g_nope", "calendar_id": "x", "name": "X", "member_id": "anna"}]
-    assert types(c.put("/api/admin/config", json=full_config(app, calendars=cals))) == ["unknown_account"]
+    assert types(put_config(c, full_config(app, calendars=cals))) == ["unknown_account"]
     cals = [{"account_id": "g_a", "calendar_id": "x", "name": "X", "member_id": "ghost"}]
-    assert types(c.put("/api/admin/config", json=full_config(app, calendars=cals))) == ["unknown_member"]
+    assert types(put_config(c, full_config(app, calendars=cals))) == ["unknown_member"]
     r = c.put("/api/admin/secrets", json={"admin_password": "short"})
     assert sorted(types(r)) == ["current_password_required", "password_too_short"]
     r = c.put("/api/admin/secrets", json={"admin_password": "long-enough-1", "current_password": "bad"})
@@ -590,7 +601,7 @@ def test_error_types_are_stable(app):
 
 def test_photos_shuffle_is_server_owned(app):
     c = client(app)
-    assert c.put("/api/admin/config", json=full_config(app, photos_shuffle=True)).status_code == 200
+    assert put_config(c, full_config(app, photos_shuffle=True)).status_code == 200
     assert app.state.store.config.photos_shuffle is False
     sock = FakeSocket()
     asyncio.run(app.state.hub.connect(sock))
@@ -600,7 +611,7 @@ def test_photos_shuffle_is_server_owned(app):
     assert app.state.store.config.photos_shuffle is True
     assert [m["config"]["photos_shuffle"] for m in sock.messages if m["type"] == "config"] == [True]
     # a later full-config save from the settings page does not undo it
-    assert c.put("/api/admin/config", json=full_config(app, photos_shuffle=False)).status_code == 200
+    assert put_config(c, full_config(app, photos_shuffle=False)).status_code == 200
     assert app.state.store.config.photos_shuffle is True
     assert c.put("/api/admin/photos/shuffle", json={"shuffle": "yes"}).status_code == 422
     assert client(app, csrf=False).put("/api/admin/photos/shuffle", json={"shuffle": False}).status_code == 403
@@ -610,8 +621,104 @@ def test_photos_shuffle_is_server_owned(app):
 def test_public_view_is_part_of_settings_put(app):
     c = client(app)
     assert app.state.store.config.public_view is False
-    r = c.put("/api/admin/config", json=full_config(app, public_view=True))
+    r = put_config(c, full_config(app, public_view=True))
     assert r.status_code == 200 and r.json()["config"]["public_view"] is True
     assert app.state.store.config.public_view is True
-    assert c.put("/api/admin/config", json=full_config(app, public_view=False)).status_code == 200
+    assert put_config(c, full_config(app, public_view=False)).status_code == 200
     assert app.state.store.config.public_view is False
+
+
+# ---- stale-save protection (If-Match revision) --------------------------------------------
+
+STALE = [{"type": "stale_config", "loc": [], "msg": "Settings were changed elsewhere; reload."}]
+
+
+def test_get_config_returns_revision(app):
+    c = client(app)
+    rev = c.get("/api/admin/config").json()["revision"]
+    assert rev == config_revision(app.state.store.config)
+    assert len(rev) == 16 and int(rev, 16) >= 0
+    assert c.get("/api/admin/config").json()["revision"] == rev  # stable
+
+
+def test_put_with_current_revision_saves_and_returns_new_revision(app):
+    c = client(app)
+    rev = c.get("/api/admin/config").json()["revision"]
+    r = put_config(c, full_config(app, rotation_seconds=45), revision=rev)
+    assert r.status_code == 200, r.text
+    new_rev = r.json()["revision"]
+    assert new_rev != rev and new_rev == config_revision(app.state.store.config)
+    # the page keeps saving with the returned revision, without reloading
+    r = put_config(c, full_config(app, rotation_seconds=50), revision=new_rev)
+    assert r.status_code == 200 and app.state.store.config.rotation_seconds == 50
+
+
+def test_put_with_old_revision_is_refused(app):
+    c = client(app)
+    sock = FakeSocket()
+    asyncio.run(app.state.hub.connect(sock))
+    old_rev = c.get("/api/admin/config").json()["revision"]
+    assert put_config(c, full_config(app, rotation_seconds=45)).status_code == 200
+    sock.messages.clear()
+    before = app.state.store.config
+    r = put_config(c, full_config(app, rotation_seconds=99), revision=old_rev)
+    assert r.status_code == 409
+    assert r.json() == {"detail": STALE}
+    assert app.state.store.config == before and before.rotation_seconds == 45
+    assert sock.messages == []  # nothing published
+
+
+def test_put_without_revision_is_refused(app):
+    c = client(app)
+    before = app.state.store.config
+    r = c.put("/api/admin/config", json=full_config(app, rotation_seconds=45))
+    assert r.status_code == 409 and r.json() == {"detail": STALE}
+    r = c.put("/api/admin/config", json=full_config(app, rotation_seconds=45), headers={"If-Match": '""'})
+    assert r.status_code == 409
+    assert app.state.store.config == before
+
+
+def test_unquoted_if_match_is_accepted(app):
+    c = client(app)
+    rev = config_revision(app.state.store.config)
+    r = c.put("/api/admin/config", json=full_config(app, rotation_seconds=45), headers={"If-Match": rev})
+    assert r.status_code == 200, r.text
+
+
+def test_shuffle_change_makes_old_revision_stale(app):
+    c = client(app)
+    rev = c.get("/api/admin/config").json()["revision"]
+    assert c.put("/api/admin/photos/shuffle", json={"shuffle": True}).status_code == 200
+    r = put_config(c, full_config(app, rotation_seconds=45), revision=rev)
+    assert r.status_code == 409 and r.json()["detail"][0]["type"] == "stale_config"
+    assert app.state.store.config.rotation_seconds == 30
+
+
+def test_google_delete_makes_old_revision_stale(app):
+    with_family(app)
+    c = client(app)
+    rev = c.get("/api/admin/config").json()["revision"]
+    assert c.delete("/api/admin/google/g_a").status_code == 200
+    assert put_config(c, full_config(app), revision=rev).status_code == 409
+
+
+def test_incident_stale_settings_page_cannot_drop_a_new_page(app):
+    """A Settings tab loaded before a page was added server-side saves its whole config."""
+    store = app.state.store
+    store.save_config(store.config.model_copy(update={"pages": [p for p in store.config.pages if p.type != "photos"]}))
+    tab_a = client(app)
+    view = tab_a.get("/api/admin/config").json()
+    assert "photos" not in [p["type"] for p in view["config"]["pages"]]
+
+    # elsewhere: another device adds the photos page
+    tab_b = client(app)
+    view_b = tab_b.get("/api/admin/config").json()
+    pages = view_b["config"]["pages"] + [{"type": "photos", "enabled": True, "seconds": 60, "options": {}}]
+    assert put_config(tab_b, {**view_b["config"], "pages": pages}, revision=view_b["revision"]).status_code == 200
+
+    # tab A saves its out-of-date config
+    stale_body = {**view["config"], "rotation_seconds": 40}
+    r = put_config(tab_a, stale_body, revision=view["revision"])
+    assert r.status_code == 409 and r.json() == {"detail": STALE}
+    assert "photos" in [p.type for p in store.config.pages]
+    assert store.config.rotation_seconds == 30

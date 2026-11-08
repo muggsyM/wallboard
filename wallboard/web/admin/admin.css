@@ -71,7 +71,23 @@ body.settings {
   background: var(--bg);
   border-bottom: 1px solid var(--line);
 }
+.settings .topbar { flex-wrap: wrap; }
 .settings .topbar h1 { margin: 0; font-size: 1.25rem; }
+/* Stale-config banner: a full-width row of the sticky top bar, so it stays in view. */
+.banner {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 107, 107, .14);
+  border: 1px solid #5a2e33;
+  color: var(--text);
+}
+.banner[hidden] { display: none; }
+.banner p { flex: 1 1 240px; margin: 0; font-size: .95rem; }
 .settings .topbar nav { display: flex; align-items: center; gap: 16px; }
 .settings .topbar form { margin: 0; }
 .settings a { color: var(--accent); text-decoration: none; }

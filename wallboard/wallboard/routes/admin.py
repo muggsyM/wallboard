@@ -15,7 +15,7 @@ from starlette.concurrency import run_in_threadpool
 
 from .. import auth, google_oauth
 from ..actions import CONTROLLABLE_DOMAINS
-from ..config import Config, GoogleAccount, Secrets
+from ..config import Config, GoogleAccount, Secrets, config_revision
 from ..ha_client import HAError, probe_connection, wanted_entities_for
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
@@ -116,10 +116,13 @@ def _secrets_set(s: Secrets) -> dict[str, bool]:
 
 
 def _admin_view(app) -> dict[str, Any]:
-    """What the settings page needs. Includes Google account emails (admin only); never secrets."""
+    """What the settings page needs. Includes Google account emails (admin only); never secrets.
+    `revision` belongs to exactly this `config` (one read of store.config)."""
     store = app.state.store
+    cfg = store.config
     return {
-        "config": store.config.model_dump(mode="json"),
+        "config": cfg.model_dump(mode="json"),
+        "revision": config_revision(cfg),
         "secrets_set": _secrets_set(store.secrets),
         "status": app.state.hub.snapshot()["status"],
         "controllable_domains": sorted(CONTROLLABLE_DOMAINS),
@@ -228,14 +231,39 @@ def _calendar_inputs(cfg: Config) -> tuple:
     return (cfg.calendars, cfg.members, cfg.timezone, cfg.language)
 
 
+def _if_match(request: Request) -> str | None:
+    """The revision from `If-Match: "<revision>"` (quotes optional); None when absent."""
+    raw = request.headers.get("if-match", "").strip()
+    if raw.startswith("W/"):
+        raw = raw[2:]
+    raw = raw.strip('"').strip()
+    return raw or None
+
+
+def _stale() -> JSONResponse:
+    return JSONResponse(
+        {"detail": [_error([], "Settings were changed elsewhere; reload.", "stale_config")]}, status_code=409
+    )
+
+
 @router.put("/api/admin/config", dependencies=[Depends(auth.require_admin)])
 async def put_config(request: Request) -> Any:
+    """Save the whole config from the settings page.
+
+    Optimistic concurrency: the request must carry `If-Match: "<revision>"` with the revision
+    the page got from GET (or from its last successful PUT). The body stays the plain Config.
+    A missing or outdated revision gets 409 `stale_config` and nothing is saved, so a page
+    opened before another change (another device, a Google sign-in, the photos shuffle switch)
+    cannot overwrite it. The response carries the new revision.
+    """
     payload = await _read_object(request)
     if isinstance(payload, JSONResponse):
         return payload
     app = request.app
     store = app.state.store
     old = store.config  # no await from here until save_config / save_secrets
+    if _if_match(request) != config_revision(old):
+        return _stale()
     # Server-owned fields: the Google routes own the accounts, the photos page owns shuffle.
     payload["google_accounts"] = [a.model_dump() for a in old.google_accounts]
     payload["photos_shuffle"] = old.photos_shuffle
