@@ -18,7 +18,7 @@
 // overflow trim apply to the other entries (pickVisible: past timed events go first, then
 // from the end) plus "+N more".
 //
-// Tapping a day (a tap, not a swipe: lib/gesture.js) opens the day window (mockup variant
+// Tapping a day (a tap, not a swipe) opens the day window (lib/day-window.js, mockup variant
 // N) over the board: all-day chips, holiday, timed events with full titles, location and
 // who. It closes on ×, on a tap on the veil, after IDLE_CLOSE_MS without a touch, and with
 // the page. While open it holds the board (ctx.hold: no rotation, no night mode) and
@@ -27,19 +27,16 @@
 // The grid is rebuilt only when the calendar payload, language, zone or local minute
 // changes (checked on every store update and every 20 s).
 import { renderHeader, safeColor } from "../header.js";
-import { t, tn, getLanguage, fmtMonthRange, fmtWeekdayShort, fmtDayMonthShort, fmtLongDate } from "../../shared/i18n.js";
-import { WEATHER_ICONS } from "../../shared/ha-format.js";
+import { t, getLanguage, fmtMonthRange, fmtWeekdayShort, fmtDayMonthShort } from "../../shared/i18n.js";
 import { clampSetting } from "../lib/page-options.js";
 import {
   localDate, noonOf, bucket, isPast, pickVisible, weekGrid, assignLanes, barPiece,
 } from "../lib/layout.js";
 import { readableText } from "../lib/color.js";
-import { classifyGesture } from "../lib/gesture.js";
-import { dayDetail, createIdleTimer } from "../lib/day-detail.js";
+import { createDayWindow } from "../lib/day-window.js";
 import { chipTime } from "./week.js";
 
 const MINUTE_CHECK_MS = 20000;
-export const IDLE_CLOSE_MS = 30000;
 const DEFAULT_MAX = 5;
 const DEFAULT_WEEKS = 4;
 export const clampMaxEvents = (v) => clampSetting(v, 1, 6, DEFAULT_MAX);
@@ -56,7 +53,6 @@ const isWeekend = (iso) => {
   const d = new Date(`${iso}T00:00:00Z`).getUTCDay();
   return d === 0 || d === 6;
 };
-const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 function solid(node, color) {
   const c = safeColor(color);
@@ -156,73 +152,6 @@ function dayCell(d) {
   return { c, fit };
 }
 
-// ---- day window ----
-
-function detailSubtitle(info) {
-  const sub = el("small", "wb-mdet-sub");
-  const w = info.weather;
-  const parts = [];
-  if (w) {
-    if (w.condition) sub.append(el("i", `mdi ${WEATHER_ICONS[w.condition] || "mdi-weather-partly-cloudy"}`));
-    if (w.high !== null && w.low !== null) parts.push(t("high_low", { high: w.high, low: w.low }));
-    else if (w.high !== null) parts.push(`${w.high}°`);
-  }
-  if (info.count) parts.push(tn("day_events", info.count));
-  sub.append(parts.join("  ·  "));
-  return sub;
-}
-
-function detailChip(ev) {
-  const c = el("span", "wb-mdet-chip");
-  if (ev.members) {
-    c.classList.add("merged");
-    c.style.borderLeftColor = safeColor(ev.members[0].color);
-    c.append(memberDots(ev.members, "wb-mdet-dots"), ev.title ?? "");
-  } else {
-    solid(c, ev.color);
-    c.textContent = ev.title ?? "";
-  }
-  return c;
-}
-
-function detailRow({ ev, time }, initials) {
-  const r = el("div", "wb-mdet-row");
-  r.append(el("span", "wb-mdet-tm", time));
-  const who = el("span", "wb-mdet-who wb-initial", initials.get(ev.member_id) ?? "•");
-  solid(who, ev.color);
-  const ti = el("span", "wb-mdet-ti", ev.title ?? "");
-  if (ev.location) ti.append(el("span", "wb-mdet-loc", ev.location));
-  r.append(who, ti);
-  return r;
-}
-
-// The sheet's content for `info` (dayDetail()).
-function detailContent(info, tz, members) {
-  const top = el("div", "wb-mdet-top");
-  const h = el("h2", "", capitalize(fmtLongDate(noonOf(info.iso, tz))));
-  h.append(detailSubtitle(info));
-  const x = el("div", "wb-mdet-x", "×");
-  x.setAttribute("role", "button");
-  x.setAttribute("aria-label", t("day_close"));
-  top.append(h, x);
-
-  const body = el("div", "wb-mdet-body");
-  if (info.holiday) body.append(el("div", "wb-mdet-hol", info.holiday));
-  if (info.allDay.length) {
-    const alls = el("div", "wb-mdet-alls");
-    alls.append(...info.allDay.map(detailChip));
-    body.append(alls);
-  }
-  if (info.timed.length) {
-    const initials = new Map((members || []).map((m) => [m.id, m.initial]));
-    const list = el("div", "wb-mdet-list");
-    list.append(...info.timed.map((x) => detailRow(x, initials)));
-    body.append(list);
-  }
-  if (!info.count) body.append(el("div", "wb-mdet-empty", t("day_no_events")));
-  return [top, body, el("div", "wb-mdet-hint", t("day_hint"))];
-}
-
 export default {
   type: "month",
   titleKey: "month",
@@ -240,78 +169,11 @@ export default {
     let last = null; // key of the last grid build
     let alive = true;
 
-    // Day window: {iso, overlay, sheet, release, key} while open.
-    let detail = null;
-    const idle = createIdleTimer({ ms: IDLE_CLOSE_MS, onExpire: () => closeDetail() });
-
-    function fillDetail(state) {
-      const tz = state.config?.timezone || "Europe/Prague";
-      const info = dayDetail(state.calendar?.events || [], detail.iso, tz, state.calendar?.holidays, state.weather);
-      const body = detail.sheet.querySelector(".wb-mdet-body");
-      const scroll = body ? body.scrollTop : 0;
-      detail.sheet.replaceChildren(...detailContent(info, tz, state.config?.members));
-      detail.sheet.querySelector(".wb-mdet-body").scrollTop = scroll;
-      detail.key = detailKey(state);
-    }
-    const detailKey = (state) => ({
-      calendar: state.calendar, weather: state.weather, config: state.config, lang: getLanguage(),
-    });
-    const sameDetail = (a, b) =>
-      a.calendar === b.calendar && a.weather === b.weather && a.config === b.config && a.lang === b.lang;
-
     function markSelected(iso) {
       for (const c of grid.querySelectorAll(".wb-mc.sel")) c.classList.remove("sel");
       if (iso) grid.querySelector(`.wb-mc[data-iso="${iso}"]`)?.classList.add("sel");
     }
-
-    function openDetail(iso) {
-      const overlay = el("div", "wb-mdet");
-      overlay.dataset.tap = "";
-      const sheet = el("div", "wb-mdet-sheet");
-      overlay.append(sheet);
-      detail = { iso, overlay, sheet, release: ctx.hold?.() ?? null, key: null };
-      fillDetail(ctx.store.get());
-      root.append(overlay);
-      markSelected(iso);
-      idle.start();
-    }
-
-    function closeDetail() {
-      idle.stop();
-      if (!detail) return;
-      detail.release?.();
-      detail.overlay.remove();
-      detail = null;
-      markSelected(null);
-    }
-
-    // Taps: classified like the shell does (a swipe on a cell still pages, the shell
-    // handles it). Any touch inside the open window restarts its idle timer.
-    let press = null;
-    const onDown = (e) => {
-      if (!e.isPrimary) return;
-      press = { x: e.clientX, y: e.clientY, t: Date.now(), target: e.target };
-      if (detail) idle.poke();
-    };
-    const onUp = (e) => {
-      if (!e.isPrimary || !press) return;
-      const p = press;
-      press = null;
-      if (classifyGesture({ dx: e.clientX - p.x, dy: e.clientY - p.y, dt: Date.now() - p.t }) !== "tap") return;
-      const target = p.target;
-      if (detail) {
-        if (target.closest?.(".wb-mdet-x") || !target.closest?.(".wb-mdet-sheet")) closeDetail();
-        return;
-      }
-      const cell = target.closest?.(".wb-mc[data-iso]");
-      if (cell && grid.contains(cell)) openDetail(cell.dataset.iso);
-    };
-    const onCancel = () => (press = null);
-    const onScroll = () => detail && idle.poke();
-    root.addEventListener("pointerdown", onDown);
-    root.addEventListener("pointerup", onUp);
-    root.addEventListener("pointercancel", onCancel);
-    root.addEventListener("scroll", onScroll, true);
+    const win = createDayWindow(root, ctx, { cells: ".wb-mc[data-iso]", within: grid, onSelect: markSelected });
 
     const same = (a, b) =>
       a && b && a.tz === b.tz && a.minute === b.minute && a.calendar === b.calendar && a.lang === b.lang;
@@ -323,8 +185,7 @@ export default {
       const days = weekGrid(today, weeks);
       const subtitle = fmtMonthRange(noonOf(days[0], tz), noonOf(days[days.length - 1], tz));
       renderHeader(header, state, { titleKey: "month", subtitle });
-      // Live updates keep the window open on the same day.
-      if (detail && !sameDetail(detail.key, detailKey(state))) fillDetail(state);
+      win.update(state);
       const key = { tz, minute: Math.floor(now / 60000), calendar: state.calendar, lang: getLanguage() };
       if (!force && same(key, last)) return;
       last = key;
@@ -339,7 +200,7 @@ export default {
         week.forEach((iso, column) => {
           cells.push(dayCell({
             iso, column, first: w === 0 && column === 0, today, events: byDay.get(iso), lanes,
-            holiday: typeof holidays[iso] === "string" ? holidays[iso] : "", cap, tz, now, selected: detail?.iso,
+            holiday: typeof holidays[iso] === "string" ? holidays[iso] : "", cap, tz, now, selected: win.iso(),
           }));
         });
       }
@@ -372,11 +233,7 @@ export default {
       update: (state) => render(state),
       destroy() {
         alive = false;
-        closeDetail();
-        root.removeEventListener("pointerdown", onDown);
-        root.removeEventListener("pointerup", onUp);
-        root.removeEventListener("pointercancel", onCancel);
-        root.removeEventListener("scroll", onScroll, true);
+        win.destroy();
         clearInterval(timer);
         ro?.disconnect();
         document.fonts?.removeEventListener?.("loadingdone", refit);

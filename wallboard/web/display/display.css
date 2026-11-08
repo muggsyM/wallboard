@@ -439,14 +439,14 @@ html.remote #app {
 
 /* ---------- today page ---------- */
 /* Photo and today's schedule side by side (mockup "dnes-varianty" variant P): the photo
-   about 40 % wide on the left, the schedule in a panel on the right; the row takes the
+   45 % wide on the left, the schedule in a panel on the right; the row takes the
    height left between the header and the next-days cards. With no photos the schedule
    uses the full width. */
 .wb-pt {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 40fr) minmax(0, 60fr);
+  grid-template-columns: minmax(0, 45fr) minmax(0, 55fr);
   gap: 2.6cqw;
 }
 .wb-pt:has(> .wb-photo[hidden]) { grid-template-columns: minmax(0, 1fr); }
@@ -601,6 +601,17 @@ html.remote #app {
 .wb-card3-wx .mdi { color: var(--wb-accent-sun); margin-right: .6cqw; }
 .wb-card3-i { margin-top: .8cqw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wb-card3-more { margin-top: .8cqw; opacity: .7; }
+.wb-card3.sel { box-shadow: 0 0 0 .4cqw rgba(255, 255, 255, .5); }
+/* Today's quick tiles sit in a panel that keeps its place even with no tiles set. */
+.wb-qt {
+  flex: none;
+  box-sizing: border-box;
+  min-height: 21cqw;
+  padding: 2cqw;
+  border-radius: 3cqw;
+  background: rgba(255, 255, 255, .04);
+}
+.wb-qt.empty { border: .3cqw dashed rgba(255, 255, 255, .18); background: none; }
 .wb-dot {
   display: inline-block;
   width: 2cqw;
