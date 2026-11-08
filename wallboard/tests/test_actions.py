@@ -139,3 +139,77 @@ def test_wiring_through_display_websocket(data_dir, monkeypatch):
         ws.send_json({"type": "action", "id": "a2", "entity_id": "light.other"})
         assert ws.receive_json() == {"type": "action_result", "id": "a2", "ok": False, "error": "not allowed"}
     assert [x[:2] for x in ha.calls] == [("light", "toggle")]
+
+
+# ---- vacuum card ----
+
+from wallboard.actions import resolve_vacuum_command  # noqa: E402
+from wallboard.config import Vacuum, VacuumRoom  # noqa: E402
+from wallboard.ha_client import wanted_entities_for  # noqa: E402
+
+
+def vac_cfg():
+    return Config(vacuum=Vacuum(
+        entity_id="vacuum.robo",
+        battery_entity="sensor.robo_battery",
+        rooms=[VacuumRoom(name="Kitchen", segments=[6]), VacuumRoom(name="Bedroom", segments=[4, 5])],
+    ))
+
+
+@pytest.mark.parametrize(
+    "command,expected",
+    [
+        ("start", ("vacuum", "start", None)),
+        ("dock", ("vacuum", "return_to_base", None)),
+        ("room:0", ("vacuum", "send_command", {"command": "app_segment_clean", "params": [{"segments": [6], "repeat": 1}]})),
+        ("room:1", ("vacuum", "send_command", {"command": "app_segment_clean", "params": [{"segments": [4, 5], "repeat": 1}]})),
+    ],
+)
+def test_resolve_vacuum_command(command, expected):
+    assert resolve_vacuum_command(vac_cfg(), "vacuum.robo", command) == expected
+
+
+@pytest.mark.parametrize("entity_id,command", [
+    ("vacuum.other", "start"), ("vacuum.robo", "room:2"), ("vacuum.robo", "room:-1"), ("vacuum.robo", "room:x"),
+    ("vacuum.robo", "locate"), ("vacuum.robo", ""),
+])
+def test_resolve_vacuum_command_rejects(entity_id, command):
+    with pytest.raises(ActionNotAllowed):
+        resolve_vacuum_command(vac_cfg(), entity_id, command)
+
+
+def test_resolve_vacuum_command_without_vacuum_config():
+    with pytest.raises(ActionNotAllowed):
+        resolve_vacuum_command(Config(), "vacuum.robo", "start")
+
+
+def test_vacuum_entities_are_wanted():
+    assert {"vacuum.robo", "sensor.robo_battery"} <= wanted_entities_for(vac_cfg())
+
+
+def test_vacuum_config_validates():
+    with pytest.raises(Exception):
+        Vacuum(entity_id="switch.robo")
+    with pytest.raises(Exception):
+        VacuumRoom(name="Kitchen", segments=[])
+
+
+class _VacHA(FakeHA):
+    async def call_service(self, domain, service, entity_id=None, **kw):
+        self.calls.append((domain, service, entity_id, kw.get("service_data")))
+
+
+def test_handle_vacuum_room_sends_segments():
+    ha = _VacHA()
+    h = ActionHandler(FakeStore(vac_cfg()), FakeHub(), ha)
+    res = asyncio.run(h.handle("vacuum.robo", "i", "room:0"))
+    assert res["ok"] is True
+    assert ha.calls == [("vacuum", "send_command", "vacuum.robo", {"command": "app_segment_clean", "params": [{"segments": [6], "repeat": 1}]})]
+
+
+def test_handle_vacuum_bad_command_makes_no_call():
+    ha = _VacHA()
+    h = ActionHandler(FakeStore(vac_cfg()), FakeHub(), ha)
+    res = asyncio.run(h.handle("vacuum.robo", "i", "room:9"))
+    assert res == {"type": "action_result", "id": "i", "ok": False, "error": "not allowed"}
+    assert ha.calls == []

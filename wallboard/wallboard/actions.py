@@ -35,20 +35,47 @@ def resolve_action(config: Config, entity_id: str, current_state: str | None) ->
     raise ActionNotAllowed("unsupported domain")
 
 
+def resolve_vacuum_command(config: Config, entity_id: str, command: str) -> tuple[str, str, dict | None]:
+    """Return (domain, service, service_data) for a vacuum-card button, or raise ActionNotAllowed.
+
+    command: "start" (whole home), "dock" (return to base) or "room:<index>" (config.vacuum.rooms).
+    Room cleaning uses Roborock's app_segment_clean with the room's map segments.
+    """
+    vac = config.vacuum
+    if vac is None or vac.entity_id != entity_id:
+        raise ActionNotAllowed("not the configured vacuum")
+    if command == "start":
+        return "vacuum", "start", None
+    if command == "dock":
+        return "vacuum", "return_to_base", None
+    kind, _, index = command.partition(":")
+    if kind == "room" and index.isdigit() and int(index) < len(vac.rooms):
+        segments = vac.rooms[int(index)].segments
+        return "vacuum", "send_command", {"command": "app_segment_clean", "params": [{"segments": segments, "repeat": 1}]}
+    raise ActionNotAllowed("unknown vacuum command")
+
+
 class ActionHandler:
     def __init__(self, store, hub, ha) -> None:
         self._store = store
         self._hub = hub
         self._ha = ha
 
-    async def handle(self, entity_id: str, action_id: str) -> dict:
-        """Run a tap action; always returns an action_result message and never raises."""
+    async def handle(self, entity_id: str, action_id: str, command: str | None = None) -> dict:
+        """Run a tap action; always returns an action_result message and never raises.
+
+        Without `command` it is a tile tap (resolve_action); with one, a vacuum-card button.
+        """
         error: str | None = None
         try:
-            entry = self._hub.snapshot().get("ha", {}).get(entity_id)
-            state = entry.get("state") if isinstance(entry, dict) else None
-            domain, service = resolve_action(self._store.config, entity_id, state)
-            await self._ha.call_service(domain, service, entity_id)
+            if command is None:
+                entry = self._hub.snapshot().get("ha", {}).get(entity_id)
+                state = entry.get("state") if isinstance(entry, dict) else None
+                domain, service = resolve_action(self._store.config, entity_id, state)
+                data = None
+            else:
+                domain, service, data = resolve_vacuum_command(self._store.config, entity_id, command)
+            await self._ha.call_service(domain, service, entity_id, service_data=data)
         except ActionNotAllowed:
             error = "not allowed"
         except HAError as exc:

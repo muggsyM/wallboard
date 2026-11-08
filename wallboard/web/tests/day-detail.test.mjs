@@ -76,12 +76,13 @@ const EVENTS = [
   timed("long", "Celý týden", "mom", "2026-11-10T10:00:00+01:00", "2026-11-15T11:00:00+01:00"),
 ];
 
-test("dayDetail: all-day merged first, timed by start with time labels, count", () => {
+test("dayDetail: all-day first (never merged), timed by start with time labels, count", () => {
   const d = dayDetail(EVENTS, DAY, TZ, { "2026-11-12": "Svátek" }, null);
   assert.equal(d.iso, DAY);
-  // The usual event order (layout.js compare: code units, so "Š" sorts after "S").
-  assert.deepEqual(d.allDay.map((e) => e.title), ["Slovinsko", "Školka"]);
-  assert.deepEqual(d.allDay[1].members.map((m) => m.id), ["lily", "maty"]);
+  // The usual event order (layout.js compare: code units, so "Š" sorts after "S"); the
+  // same title of two members stays two entries.
+  assert.deepEqual(d.allDay.map((e) => e.title), ["Slovinsko", "Školka", "Školka"]);
+  assert.deepEqual(d.allDay.map((e) => e.member_id).slice(1).sort(), ["lily", "maty"]);
   assert.deepEqual(d.timed.map((x) => [x.ev.id, x.time]), [
     ["long", ""], // runs through the whole day
     ["night", "–06:10"], // started the day before
@@ -89,7 +90,7 @@ test("dayDetail: all-day merged first, timed by start with time labels, count", 
     ["late", "18:00"],
     ["away", "20:00–"], // ends on a later day
   ]);
-  assert.equal(d.count, 7);
+  assert.equal(d.count, 8);
   assert.equal(d.holiday, "Svátek");
   assert.equal(d.weather, null);
 });

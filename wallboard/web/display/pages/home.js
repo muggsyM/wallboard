@@ -4,6 +4,7 @@
 //   windows, running appliances among status_entities; "all good" when nothing does).
 // - Room cards (3 columns, wrapping): name, temperature, humidity and "N lights on" from
 //   light_entities; "–" for missing or unavailable sensors.
+// - Vacuum card (config.vacuum, vacuum.js): state, battery, room buttons, whole home / dock.
 // - "Lights" and "Devices" tile groups: config.tiles by group, in config order, drawn by
 //   tile.js (tap to control).
 // - Status rows: one per status entity (icon, name, value from describe()). Open doors,
@@ -18,6 +19,7 @@ import { renderHeader } from "../header.js";
 import { t, getLanguage } from "../../shared/i18n.js";
 import { describe } from "../../shared/ha-format.js";
 import { renderTile } from "../tile.js";
+import { renderVacuum } from "../vacuum.js";
 import { attentionSummary, roomView, statusTone, tileGroups } from "../lib/home-state.js";
 
 function el(tag, cls, text) {
@@ -86,6 +88,7 @@ export default {
   mount(root, ctx) {
     root.innerHTML = `<div class="wb-page-header"></div>
       <div class="wb-rooms" hidden></div>
+      <div class="wb-home-group wb-vac-box" hidden><div class="wb-lbl"></div><div></div></div>
       <div class="wb-home-group" data-group="lights" hidden><div class="wb-lbl"></div><div class="wb-tiles"></div></div>
       <div class="wb-home-group" data-group="devices" hidden><div class="wb-lbl"></div><div class="wb-tiles"></div></div>
       <div class="wb-status" hidden></div>
@@ -96,6 +99,8 @@ export default {
       lights: root.querySelector('[data-group="lights"]'),
       devices: root.querySelector('[data-group="devices"]'),
     };
+    const vacBox = root.querySelector(".wb-vac-box");
+    let vac = null;
     const statusEl = root.querySelector(".wb-status");
     const emptyEl = root.querySelector(".wb-home-empty");
     let key = null;
@@ -106,6 +111,14 @@ export default {
     function build(state) {
       const config = state.config;
       for (const x of tiles) x.handle.destroy();
+      vac?.destroy();
+      vac = null;
+      const vcfg = config?.vacuum;
+      if (vcfg) {
+        vacBox.querySelector(".wb-lbl").textContent = t("vacuum");
+        vac = renderVacuum(vacBox.lastElementChild, vcfg, state.ha, ctx);
+      }
+      vacBox.hidden = !vac;
       rooms = (config?.rooms || []).map(roomCard);
       roomsEl.replaceChildren(...rooms.map((r) => r.node));
       roomsEl.hidden = rooms.length === 0;
@@ -130,13 +143,13 @@ export default {
       statusEl.hidden = rows.length === 0;
 
       emptyEl.lastElementChild.textContent = t("home_empty");
-      emptyEl.hidden = !(rooms.length === 0 && tiles.length === 0 && rows.length === 0);
+      emptyEl.hidden = !(rooms.length === 0 && tiles.length === 0 && rows.length === 0 && !vac);
     }
 
     function render(state) {
       const config = state.config;
       renderHeader(header, state, { titleKey: "home", subtitle: attentionSummary(config?.status_entities, state.ha) });
-      const next = JSON.stringify([config?.rooms ?? [], config?.tiles ?? [], config?.status_entities ?? [], getLanguage()]);
+      const next = JSON.stringify([config?.rooms ?? [], config?.tiles ?? [], config?.status_entities ?? [], config?.vacuum ?? null, getLanguage()]);
       if (next !== key) {
         key = next;
         build(state); // tiles are drawn with the current state by renderTile
@@ -145,6 +158,7 @@ export default {
       }
       for (const r of rooms) r.update(state.ha);
       for (const r of rows) r.update(state.ha);
+      vac?.update(state.ha);
     }
 
     render(ctx.store.get());
@@ -152,6 +166,7 @@ export default {
       update: (state) => render(state),
       destroy() {
         for (const x of tiles) x.handle.destroy();
+        vac?.destroy();
         root.innerHTML = "";
       },
     };

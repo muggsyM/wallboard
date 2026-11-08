@@ -26,7 +26,8 @@ class Hub:
         # Server build id (hash of web/); the display reloads when it changes.
         self.build: str | None = None
         # (entity_id, action_id) -> action_result message
-        self.on_action: Callable[[str, str], Awaitable[dict]] | None = None
+        # on_action(entity_id, action_id[, command]): a tile tap, or a vacuum-card button.
+        self.on_action: Callable[..., Awaitable[dict]] | None = None
 
     def snapshot(self) -> dict:
         return {"type": "snapshot", "build": self.build, **copy.deepcopy(self._topics)}

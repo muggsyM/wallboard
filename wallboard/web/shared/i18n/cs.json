@@ -265,5 +265,12 @@
   "day_events_other": "{n} akcí",
   "day_no_events": "Žádné akce",
   "day_close": "Zavřít",
-  "day_hint": "Klepnutím mimo okno nebo na × zavřete · samo se zavře za 30 s"
+  "day_hint": "Klepnutím mimo okno nebo na × zavřete · samo se zavře za 30 s",
+  "vacuum": "Vysavač",
+  "vacuum_all": "Celý byt",
+  "vacuum_dock": "Do doku",
+  "vacuum_stop": "klepnutím zastavit",
+  "vacuum_started": "Vysávám: {room}",
+  "vacuum_all_started": "Vysávám celý byt",
+  "vacuum_docking": "Robot jede do doku"
 }

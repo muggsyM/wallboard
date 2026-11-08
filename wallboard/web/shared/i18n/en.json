@@ -265,5 +265,12 @@
   "day_events_other": "{n} events",
   "day_no_events": "No events",
   "day_close": "Close",
-  "day_hint": "Tap outside or on × to close · closes by itself after 30 s"
+  "day_hint": "Tap outside or on × to close · closes by itself after 30 s",
+  "vacuum": "Vacuum",
+  "vacuum_all": "Whole home",
+  "vacuum_dock": "Dock",
+  "vacuum_stop": "tap to stop",
+  "vacuum_started": "Cleaning: {room}",
+  "vacuum_all_started": "Cleaning the whole home",
+  "vacuum_docking": "Robot is going to the dock"
 }

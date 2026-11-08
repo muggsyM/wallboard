@@ -15,7 +15,7 @@
 // - Next 3 days: weekday, forecast icon and high, up to 2 events (colour dot), "+N more".
 //   Tapping a card opens the day window with all its events (lib/day-window.js).
 // - Quick tiles: config.quick_tiles mapped to config.tiles, drawn by tile.js, in a panel
-//   at the bottom that stays visible (an empty frame) when no quick tiles are set.
+//   of QUICK_SLOTS slots at the bottom; unused slots show as empty dashed tiles.
 //
 // The timeline and cards are rebuilt only when the calendar/weather payload, members,
 // language, zone or local minute changes (checked on every store update and every 20 s);
@@ -33,6 +33,7 @@ const MINUTE_CHECK_MS = 20000;
 const RAIN_MIN_PERCENT = 50;
 const NEXT_DAYS = 3;
 const CARD_EVENTS = 2;
+const QUICK_SLOTS = 4;
 
 const num = (v) => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
 const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -161,7 +162,7 @@ export default {
       <div class="wb-pt"><div class="wb-photo" hidden><img decoding="async" alt=""><div class="wb-caption"><i class="mdi mdi-image-outline"></i><span></span></div></div>
       <div class="wb-today"><div class="wb-today-top"><span class="wb-lbl"></span><div class="wb-alldays"></div></div><div class="wb-tl"></div></div></div>
       <div class="wb-cards3"></div>
-      <div class="wb-qt empty"><div class="wb-tiles"></div></div>`;
+      <div class="wb-qt"><div class="wb-tiles"></div></div>`;
     const header = root.querySelector(".wb-page-header");
     const frame = root.querySelector(".wb-photo");
     const img = frame.querySelector("img");
@@ -172,7 +173,6 @@ export default {
     const tl = root.querySelector(".wb-tl");
     const cards = root.querySelector(".wb-cards3");
     const tilesEl = root.querySelector(".wb-tiles");
-    const tilesPanel = root.querySelector(".wb-qt");
     const win = createDayWindow(root, ctx, {
       cells: ".wb-card3[data-iso]",
       within: cards,
@@ -230,8 +230,8 @@ export default {
           const node = el("div");
           return { entityId: cfg.entity_id, node, handle: renderTile(node, cfg, state.ha?.[cfg.entity_id], () => ctx.store.sendAction(cfg.entity_id), { holdRotation: ctx.holdRotation, canAct: ctx.canAct }) };
         });
-        tilesEl.replaceChildren(...tiles.map((x) => x.node));
-        tilesPanel.classList.toggle("empty", tiles.length === 0);
+        const empty = Array.from({ length: Math.max(0, QUICK_SLOTS - tiles.length) }, () => el("div", "wb-tile wb-tile-empty"));
+        tilesEl.replaceChildren(...tiles.map((x) => x.node), ...empty);
         return;
       }
       for (const x of tiles) x.handle.update(state.ha?.[x.entityId]);

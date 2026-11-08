@@ -324,7 +324,7 @@ html.remote #app {
    per member before the title. */
 .wb-me.merged { color: #fff; border-left: .9cqw solid; padding-left: .55cqw; }
 .wb-me-dots { display: inline-flex; gap: .4cqw; margin-right: .6cqw; vertical-align: .1em; }
-.wb-me-dots i, .wb-mdet-dots i { display: inline-block; border-radius: 50%; }
+.wb-me-dots i { display: inline-block; border-radius: 50%; }
 .wb-me-dots i { width: 1.5cqw; height: 1.5cqw; }
 /* Multi-day bar pieces: one line (nowrap rather than a 1-line clamp, whose hidden second
    line can show its diacritics in the padding), square inner ends, reaching the
@@ -403,17 +403,6 @@ html.remote #app {
   gap: 3cqw;
 }
 .wb-mdet-hol { flex: none; font-size: 4cqw; color: #ffd0d8; }
-.wb-mdet-alls { flex: none; display: flex; flex-wrap: wrap; gap: 1.4cqw; }
-.wb-mdet-chip {
-  border-radius: .8cqw;
-  padding: .4cqw 1.8cqw;
-  font-size: 3.8cqw;
-  line-height: 1.2;
-  overflow-wrap: anywhere;
-}
-.wb-mdet-chip.merged { background: rgba(255, 255, 255, .12); color: #fff; border-left: 1cqw solid; padding-left: 1.4cqw; }
-.wb-mdet-dots { display: inline-flex; gap: .6cqw; margin-right: 1cqw; vertical-align: .1em; }
-.wb-mdet-dots i { width: 2cqw; height: 2cqw; }
 .wb-mdet-list { flex: none; display: flex; flex-direction: column; gap: 2.2cqw; }
 .wb-mdet-row {
   display: grid;
@@ -433,6 +422,8 @@ html.remote #app {
   font-size: 3.2cqw;
 }
 .wb-mdet-ti { overflow-wrap: anywhere; padding-top: .3cqw; }
+.wb-mdet-tm.allday { font-size: 3cqw; padding-top: 1.4cqw; white-space: normal; line-height: 1.1; }
+.wb-mdet-sep { flex: none; height: .25cqw; background: rgba(255, 255, 255, .15); }
 .wb-mdet-loc { display: block; font-size: 3.2cqw; opacity: .7; margin-top: .6cqw; }
 .wb-mdet-empty { margin: auto; font-size: 5cqw; opacity: .5; }
 .wb-mdet-hint { flex: none; font-size: 3cqw; opacity: .6; text-align: center; }
@@ -602,7 +593,7 @@ html.remote #app {
 .wb-card3-i { margin-top: .8cqw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wb-card3-more { margin-top: .8cqw; opacity: .7; }
 .wb-card3.sel { box-shadow: 0 0 0 .4cqw rgba(255, 255, 255, .5); }
-/* Today's quick tiles sit in a panel that keeps its place even with no tiles set. */
+/* Today's quick tiles: a panel of 4 slots that keeps its place; unused slots are dashed. */
 .wb-qt {
   flex: none;
   box-sizing: border-box;
@@ -611,7 +602,8 @@ html.remote #app {
   border-radius: 3cqw;
   background: rgba(255, 255, 255, .04);
 }
-.wb-qt.empty { border: .3cqw dashed rgba(255, 255, 255, .18); background: none; }
+/* An unused quick-tile slot (Today always shows 4). */
+.wb-tile.wb-tile-empty { background: none; border: .3cqw dashed rgba(255, 255, 255, .18); box-sizing: border-box; min-height: 16cqw; }
 .wb-dot {
   display: inline-block;
   width: 2cqw;
@@ -696,6 +688,53 @@ html.remote .wb-tile.view-only { cursor: default; }
 .wb-room-meta { font-size: 2.4cqw; opacity: .7; }
 .wb-room-meta[hidden], .wb-rooms[hidden], .wb-home-group[hidden], .wb-status[hidden], .wb-home-empty[hidden] { display: none; }
 .wb-home-group { flex: none; }
+/* Vacuum card (vacuum.js, mockup "vysavac-den" V1). */
+.wb-vac {
+  display: flex;
+  flex-direction: column;
+  gap: 2.2cqw;
+  padding: 2.8cqw;
+  border-radius: 3cqw;
+  background: rgba(255, 255, 255, .07);
+}
+.wb-vac-h { display: flex; align-items: center; gap: 2.4cqw; }
+.wb-vac-h > .mdi { font-size: 8cqw; line-height: 1; }
+.wb-vac-who { min-width: 0; }
+.wb-vac-nm { font-size: 4.2cqw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wb-vac-who small { display: block; font-size: 2.9cqw; opacity: .7; }
+.wb-vac-bat { margin-left: auto; font-size: 3.4cqw; opacity: .85; white-space: nowrap; }
+.wb-vac-bat[hidden] { display: none; }
+.wb-vac-rooms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2cqw; }
+.wb-vac-room {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .6cqw;
+  padding: 2.4cqw 1.4cqw;
+  border-radius: 2.4cqw;
+  background: rgba(255, 255, 255, .1);
+  font-size: 3.6cqw;
+  line-height: 1.1;
+  text-align: center;
+}
+.wb-vac-room .mdi { font-size: 6.4cqw; line-height: 1; }
+.wb-vac-room small { font-size: 2.5cqw; opacity: .8; min-height: 1.1em; }
+.wb-vac-room.run { background: rgba(123, 224, 165, .22); box-shadow: inset 0 0 0 .35cqw rgba(123, 224, 165, .7); }
+.wb-vac-acts { display: flex; gap: 2cqw; }
+.wb-vac-act {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1.2cqw;
+  padding: 1.8cqw;
+  border-radius: 2cqw;
+  background: rgba(255, 255, 255, .06);
+  font-size: 3.3cqw;
+}
+.wb-vac-room.pressed, .wb-vac-act.pressed { background: rgba(255, 255, 255, .22); }
+.wb-vac.pending { opacity: .8; }
+.wb-vac.view-only .wb-vac-room, .wb-vac.view-only .wb-vac-act { opacity: .6; }
 .wb-home-group .wb-lbl { margin-bottom: 1.6cqw; }
 .wb-status {
   flex: 0 1 auto;

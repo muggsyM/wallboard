@@ -99,6 +99,10 @@ def wanted_entities_for(cfg: Config) -> set[str]:
     wanted.update(m.person_entity for m in cfg.members if m.person_entity)
     if cfg.weather_entity:
         wanted.add(cfg.weather_entity)
+    if cfg.vacuum:
+        wanted.add(cfg.vacuum.entity_id)
+        if cfg.vacuum.battery_entity:
+            wanted.add(cfg.vacuum.battery_entity)
     return wanted
 
 

@@ -179,6 +179,17 @@ test("sendAction sends an action and resolves on the matching result", async () 
   assert.deepEqual(await p2, { ok: false, error: "not allowed" });
 });
 
+test("sendAction carries a vacuum command only when given", async () => {
+  const { store, sockets } = setup();
+  store.connect();
+  const ws = sockets[0];
+  ws.open();
+  store.sendAction("vacuum.robot", "room:2").catch(() => {});
+  store.sendAction("light.kitchen").catch(() => {});
+  assert.equal(ws.sent[0].command, "room:2");
+  assert.equal("command" in ws.sent[1], false);
+});
+
 test("sendAction rejects with timeout after 5 s", async () => {
   const { store, sockets, timers } = setup();
   store.connect();

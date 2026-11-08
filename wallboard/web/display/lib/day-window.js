@@ -37,16 +37,6 @@ function solid(node, color) {
 
 const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
-function memberDots(members, cls) {
-  const dots = el("span", cls);
-  for (const m of members) {
-    const i = el("i");
-    i.style.background = safeColor(m.color);
-    dots.append(i);
-  }
-  return dots;
-}
-
 function detailSubtitle(info) {
   const sub = el("small", "wb-mdet-sub");
   const w = info.weather;
@@ -61,22 +51,9 @@ function detailSubtitle(info) {
   return sub;
 }
 
-function detailChip(ev) {
-  const c = el("span", "wb-mdet-chip");
-  if (ev.members) {
-    c.classList.add("merged");
-    c.style.borderLeftColor = safeColor(ev.members[0].color);
-    c.append(memberDots(ev.members, "wb-mdet-dots"), ev.title ?? "");
-  } else {
-    solid(c, ev.color);
-    c.textContent = ev.title ?? "";
-  }
-  return c;
-}
-
-function detailRow({ ev, time }, initials) {
+function detailRow({ ev, time }, initials, kind = "") {
   const r = el("div", "wb-mdet-row");
-  r.append(el("span", "wb-mdet-tm", time));
+  r.append(el("span", kind ? `wb-mdet-tm ${kind}` : "wb-mdet-tm", time));
   const who = el("span", "wb-mdet-who wb-initial", initials.get(ev.member_id) ?? "•");
   solid(who, ev.color);
   const ti = el("span", "wb-mdet-ti", ev.title ?? "");
@@ -97,13 +74,16 @@ function detailContent(info, tz, members) {
 
   const body = el("div", "wb-mdet-body");
   if (info.holiday) body.append(el("div", "wb-mdet-hol", info.holiday));
+  // Mockup "vysavac-den" variant B: all-day events are rows like the timed ones ("all day"
+  // instead of a time, the member's initial dot, the title), then a rule, then timed events.
+  const initials = new Map((members || []).map((m) => [m.id, m.initial]));
   if (info.allDay.length) {
-    const alls = el("div", "wb-mdet-alls");
-    alls.append(...info.allDay.map(detailChip));
-    body.append(alls);
+    const list = el("div", "wb-mdet-list");
+    list.append(...info.allDay.map((ev) => detailRow({ ev, time: t("all_day") }, initials, "allday")));
+    body.append(list);
   }
+  if (info.allDay.length && info.timed.length) body.append(el("div", "wb-mdet-sep"));
   if (info.timed.length) {
-    const initials = new Map((members || []).map((m) => [m.id, m.initial]));
     const list = el("div", "wb-mdet-list");
     list.append(...info.timed.map((x) => detailRow(x, initials)));
     body.append(list);

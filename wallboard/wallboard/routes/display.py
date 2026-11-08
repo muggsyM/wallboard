@@ -128,7 +128,10 @@ async def display_ws(ws: WebSocket) -> None:
             if not isinstance(msg, dict) or msg.get("type") != "action":
                 continue
             action_id, entity_id = msg.get("id"), msg.get("entity_id")
+            command = msg.get("command")
             if not isinstance(action_id, str) or not isinstance(entity_id, str):
+                continue
+            if command is not None and not isinstance(command, str):
                 continue
             if not can_act:
                 result = {"type": "action_result", "id": action_id, "ok": False, "error": "view_only"}
@@ -136,7 +139,7 @@ async def display_ws(ws: WebSocket) -> None:
                 result = {"type": "action_result", "id": action_id, "ok": False, "error": "not available"}
             else:
                 try:
-                    result = await hub.on_action(entity_id, action_id)
+                    result = await (hub.on_action(entity_id, action_id) if command is None else hub.on_action(entity_id, action_id, command))
                 except Exception:
                     result = {"type": "action_result", "id": action_id, "ok": False, "error": "action failed"}
             await ws.send_json(result)

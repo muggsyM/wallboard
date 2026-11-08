@@ -62,6 +62,22 @@ class Tile(BaseModel):
     controllable: bool = False
 
 
+class VacuumRoom(BaseModel):
+    """One room button on the Home page's vacuum card: cleans these map segments."""
+
+    name: str = Field(min_length=1, max_length=40)
+    icon: str | None = None  # mdi icon name, e.g. "mdi-silverware-fork-knife"
+    segments: list[int] = Field(min_length=1, max_length=10)
+
+
+class Vacuum(BaseModel):
+    """The Home page's vacuum card (Roborock-style segment cleaning via vacuum.send_command)."""
+
+    entity_id: str = Field(pattern=r"^vacuum\.[a-z0-9_]+$")
+    battery_entity: str | None = None
+    rooms: list[VacuumRoom] = Field([], max_length=6)
+
+
 class PageRef(BaseModel):
     type: str
     enabled: bool = True
@@ -90,6 +106,7 @@ class Config(BaseModel):
     rooms: list[Room] = []
     tiles: list[Tile] = []
     status_entities: list[str] = []
+    vacuum: Vacuum | None = None
     quick_tiles: list[str] = []  # <= 4 entity_ids, each must be in tiles
     pages: list[PageRef] = _default_pages()
     photos_shuffle: bool = False
