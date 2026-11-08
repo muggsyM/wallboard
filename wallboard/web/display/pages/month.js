@@ -4,10 +4,9 @@
 // with a small day number top-left (today: in a small red circle; the 1st of a month and
 // the first cell add the short month name) with the Czech holiday name (pink) beside it,
 // then up to `max_events_per_day` entries (default 5) as member-colour strips: timed ones a
-// small time line above a title of up to 3 lines, all-day ones up to 2 lines. Identical
-// single-day all-day titles of several members ("Školka" for two kids) are one neutral strip
-// with a left border in the first member's colour and a dot per member (layout.js
-// mergeSameAllDay); it counts as one entry. Past days are dimmed, weekend numbers tinted.
+// small time line above a title of up to 3 lines, all-day ones up to 2 lines. Every
+// member's all-day entry is its own strip, even with identical titles ("Školka" twice).
+// Past days are dimmed, weekend numbers tinted.
 //
 // Multi-day all-day events are continuous bars (lib/layout.js assignLanes + barPiece): each
 // bar keeps one lane (vertical slot) across its week row, lanes come right after the day
@@ -32,7 +31,7 @@ import { t, tn, getLanguage, fmtMonthRange, fmtWeekdayShort, fmtDayMonthShort, f
 import { WEATHER_ICONS } from "../../shared/ha-format.js";
 import { clampSetting } from "../lib/page-options.js";
 import {
-  localDate, noonOf, bucket, isPast, pickVisible, weekGrid, assignLanes, barPiece, mergeSameAllDay,
+  localDate, noonOf, bucket, isPast, pickVisible, weekGrid, assignLanes, barPiece,
 } from "../lib/layout.js";
 import { readableText } from "../lib/color.js";
 import { classifyGesture } from "../lib/gesture.js";
@@ -131,7 +130,9 @@ function dayCell(d) {
   if (holiday) head.append(el("span", "wb-mc-hol", holiday));
 
   const barsHere = events.filter((ev) => lanes.has(ev));
-  const others = mergeSameAllDay(events.filter((ev) => !lanes.has(ev)));
+  // Each member's all-day entry is its own strip here (the owner wants two "Školka"
+  // strips, one per child); the day window still merges them (lib/day-detail.js).
+  const others = events.filter((ev) => !lanes.has(ev));
   const laneRows = barsHere.length ? Math.max(...barsHere.map((ev) => lanes.get(ev))) + 1 : 0;
   const top = [head];
   for (let lane = 0; lane < laneRows; lane++) {
