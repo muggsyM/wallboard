@@ -10,10 +10,13 @@
 //   pre-blurred bg_url (cover), which the server renders, so no CSS blur.
 // - Bottom left the album name (`show_caption`, default on), bottom right a small clock.
 // - No photos: a calm hint on the chalkboard to add some in Settings.
-// Taps and swipes are the shell's (tap: next page, swipe: page).
+// - Left and right edge strips (‹ ›, data-tap) step to the previous / next photo by hand;
+//   the shell's touch pause keeps the page up meanwhile and the photo timer restarts.
+//   Elsewhere taps and swipes are the shell's (tap: next page, swipe: page).
 import { t, fmtTime } from "../../shared/i18n.js";
 import { clampSetting } from "../lib/page-options.js";
 import { createSlideshow } from "../lib/slideshow.js";
+import { classifyGesture } from "../lib/gesture.js";
 
 const DEFAULT_SECONDS = 10;
 const FADE_MS = 1200; // matches .wb-ph-layer transition in display.css
@@ -35,10 +38,13 @@ export default {
       <div class="wb-ph-layer"><img decoding="async" alt=""></div>
       <div class="wb-ph-empty" hidden><i class="mdi mdi-image-multiple-outline"></i><span></span></div>
       <div class="wb-ph-caption" hidden></div>
-      <div class="wb-ph-clock" data-clock="time">${fmtTime(new Date())}</div>`;
+      <div class="wb-ph-clock" data-clock="time">${fmtTime(new Date())}</div>
+      <div class="wb-ph-nav prev" data-tap data-dir="prev" hidden><i class="mdi mdi-chevron-left"></i></div>
+      <div class="wb-ph-nav next" data-tap data-dir="next" hidden><i class="mdi mdi-chevron-right"></i></div>`;
     const layers = [...root.querySelectorAll(".wb-ph-layer")].map((el) => ({ el, img: el.querySelector("img") }));
     const empty = root.querySelector(".wb-ph-empty");
     const caption = root.querySelector(".wb-ph-caption");
+    const navs = [...root.querySelectorAll(".wb-ph-nav")];
     const showCaption = ctx.options?.show_caption !== false;
     let front = 0; // index of the visible layer
     let fadeUntil = 0; // the back layer is still fading out until then
@@ -105,14 +111,28 @@ export default {
       const hint = t("photos_empty");
       if (empty.lastElementChild.textContent !== hint) empty.lastElementChild.textContent = hint;
       const ids = new Set((state.photos || []).map((p) => p.id));
-      const gone = (id) => id !== null && !ids.has(id);
-      if (gone(slides.pendingId()) || gone(slides.currentId())) {
-        slides.drop();
-        slides.skip();
-      } else if (slides.isEmpty() && ids.size) {
-        slides.skip();
-      }
+      if (slides.prune((id) => ids.has(id)) || (slides.isEmpty() && ids.size)) slides.skip();
+      for (const n of navs) n.hidden = ids.size < 2;
     }
+
+    // A tap (not a swipe) on an edge strip steps by hand.
+    let press = null;
+    const onDown = (e) => {
+      const nav = e.target.closest?.(".wb-ph-nav");
+      press = nav && e.isPrimary ? { dir: nav.dataset.dir, x: e.clientX, y: e.clientY, t: Date.now() } : null;
+    };
+    const onUp = (e) => {
+      const p = press;
+      press = null;
+      if (!p || !e.isPrimary) return;
+      if (classifyGesture({ dx: e.clientX - p.x, dy: e.clientY - p.y, dt: Date.now() - p.t }) !== "tap") return;
+      if (p.dir === "prev") slides.back();
+      else slides.skip();
+    };
+    const onCancel = () => (press = null);
+    root.addEventListener("pointerdown", onDown);
+    root.addEventListener("pointerup", onUp);
+    root.addEventListener("pointercancel", onCancel);
 
     update(ctx.store.get());
     slides.start();
@@ -121,6 +141,9 @@ export default {
       destroy() {
         alive = false;
         slides.stop();
+        root.removeEventListener("pointerdown", onDown);
+        root.removeEventListener("pointerup", onUp);
+        root.removeEventListener("pointercancel", onCancel);
         for (const id of waits) clearTimeout(id);
         for (const { img } of layers) {
           img.onload = img.onerror = null;

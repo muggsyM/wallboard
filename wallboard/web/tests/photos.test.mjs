@@ -38,7 +38,7 @@ function harness({ items = ["a", "b", "c"], fail = [], dwellMs = 1000 } = {}) {
       h.loads.push({ id: item.id, resolve: () => resolve(!fail.includes(item.id)) });
     });
   h.resolve = async (id) => {
-    const i = h.loads.findIndex((l) => l.id === id);
+    const i = h.loads.findLastIndex((l) => l.id === id); // the newest (older ones were superseded)
     assert.ok(i >= 0, `load of ${id} pending`);
     h.loads.splice(i, 1)[0].resolve();
     await new Promise((r) => setImmediate(r));
@@ -134,9 +134,81 @@ test("slideshow: the last photo deleted -> empty state", async () => {
   h.s.start();
   await h.resolve("a");
   h.list = [];
-  h.s.drop();
+  assert.equal(h.s.prune(() => false), true);
   h.s.skip();
   assert.deepEqual(h.shown, ["a", null]);
+});
+
+// Show a, b, c (each loaded, then the dwell timer fires).
+async function showABC(h) {
+  h.s.start();
+  await h.resolve("a");
+  await h.resolve("b");
+  await h.fire();
+  await h.resolve("c");
+  await h.fire();
+  assert.deepEqual(h.shown, ["a", "b", "c"]);
+}
+
+test("slideshow: back() returns to earlier photos, forward replays them before new ones", async () => {
+  const h = harness({ items: ["a", "b", "c", "d"] });
+  await showABC(h);
+  await h.resolve("d"); // preloaded next
+  assert.equal(h.s.back(), true);
+  await h.resolve("b");
+  assert.deepEqual(h.shown, ["a", "b", "c", "b"]);
+  assert.equal(h.s.back(), true);
+  await h.resolve("a");
+  assert.equal(h.s.back(), false); // nothing before "a"
+  assert.equal(h.s.pendingId(), "b"); // forward = the remembered "b"
+  await h.resolve("b");
+  h.s.skip();
+  await h.resolve("c");
+  await h.fire();
+  assert.equal(h.s.pendingId(), "d"); // after the history: the photo next() picked before
+  await h.resolve("d");
+  await h.fire();
+  assert.deepEqual(h.shown, ["a", "b", "c", "b", "a", "b", "c", "d"]);
+});
+
+test("slideshow: back() restarts the dwell timer", async () => {
+  const h = harness();
+  await showABC(h);
+  h.s.back();
+  assert.equal(h.timers.size, 0);
+  await h.resolve("b");
+  assert.equal(h.timers.size, 1);
+});
+
+test("slideshow: a manual skip shows the preloaded photo at once", async () => {
+  const h = harness();
+  h.s.start();
+  await h.resolve("a");
+  await h.resolve("b");
+  h.s.skip();
+  assert.deepEqual(h.shown, ["a", "b"]);
+  assert.equal(h.timers.size, 1);
+});
+
+test("slideshow: a deleted photo leaves the history", async () => {
+  const h = harness({ items: ["a", "b", "c", "d"] });
+  await showABC(h);
+  assert.equal(h.s.prune((id) => id !== "b"), false); // neither shown nor upcoming
+  h.s.back();
+  await h.resolve("a");
+  assert.deepEqual(h.shown, ["a", "b", "c", "a"]);
+});
+
+test("slideshow: deleting the shown photo moves on", async () => {
+  const h = harness({ items: ["a", "b", "c", "d"] });
+  await showABC(h);
+  h.s.back();
+  await h.resolve("b");
+  h.list = h.list.filter((p) => p.id !== "b");
+  assert.equal(h.s.prune((id) => id !== "b"), true);
+  h.s.skip();
+  await h.resolve("c");
+  assert.deepEqual(h.shown, ["a", "b", "c", "b", "c"]);
 });
 
 test("slideshow: stop() clears the timer and ignores late loads", async () => {

@@ -763,7 +763,24 @@ html.remote .wb-tile.view-only { cursor: default; }
   text-overflow: ellipsis;
 }
 .wb-ph-clock { right: 5cqw; font-size: 6cqw; font-variant-numeric: tabular-nums; }
-.wb-ph-caption[hidden], .wb-ph-empty[hidden] { display: none; }
+.wb-ph-caption[hidden], .wb-ph-empty[hidden], .wb-ph-nav[hidden] { display: none; }
+/* Edge strips for previous / next photo (pages/photos.js): big touch targets, faint marks. */
+.wb-ph-nav {
+  position: absolute;
+  top: 12cqw;
+  bottom: 16cqw; /* clear of the caption, clock and page dots */
+  width: 20cqw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12cqw;
+  color: rgba(255, 255, 255, .55);
+  text-shadow: 0 0 2.4cqw rgba(0, 0, 0, .7);
+  -webkit-tap-highlight-color: transparent;
+}
+.wb-ph-nav.prev { left: 0; justify-content: flex-start; padding-left: 2cqw; }
+.wb-ph-nav.next { right: 0; justify-content: flex-end; padding-right: 2cqw; }
+.wb-ph-nav:active { color: rgba(255, 255, 255, .9); }
 .wb-ph-empty {
   position: absolute;
   inset: 0 12cqw;
