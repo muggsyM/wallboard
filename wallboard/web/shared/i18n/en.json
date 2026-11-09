@@ -306,5 +306,17 @@
   "admin_weather_upload": "Upload pictures",
   "wx_flag_frozen": "Frost",
   "admin_weather_frozen_rule": "at 0 °C or below without precipitation; else → by the weather",
-  "admin_weather_missing_current": "missing – the picture for the current weather is used"
+  "admin_weather_missing_current": "missing – the picture for the current weather is used",
+  "task_new_for": "New task – {name}",
+  "task_placeholder": "Type the task…",
+  "task_due": "Due",
+  "task_due_none": "no date",
+  "task_due_today": "today",
+  "task_due_tomorrow": "tomorrow",
+  "task_due_week": "this week",
+  "task_due_nextweek": "next week",
+  "task_cancel": "Cancel",
+  "task_save": "Save",
+  "task_delete": "Delete",
+  "task_space": "space"
 }

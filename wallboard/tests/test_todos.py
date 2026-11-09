@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from test_hub import LocalClient
+from test_hub import LAN_HDRS, LocalClient, _anon
 from wallboard.app import create_app
 from wallboard.config import Config, Member, Todo
 from wallboard.todos import toggled
@@ -49,3 +49,75 @@ def test_display_tap_toggles_and_publishes_config(data_dir):
         ws.send_json({"type": "action", "id": "x3", "entity_id": "todo.a"})
         assert ws.receive_json() == {"type": "action_result", "id": "x3", "ok": False, "error": "unsupported command"}
     assert app.state.store.config.todos[0].done is not None
+
+
+# ---- add / delete from the display (on-screen keyboard, long press) ----
+
+import pytest  # noqa: E402
+
+from wallboard.todos import TodoError, added, deleted  # noqa: E402
+
+
+def test_added_appends_an_open_todo_with_clean_text():
+    c = added(cfg(), {"member_id": "m", "text": "  Sehnat   ponožky\n na lyže ", "due": "2026-11-15"})
+    [t] = c.todos
+    assert (t.member_id, t.text, t.due, t.done) == ("m", "Sehnat ponožky na lyže", date(2026, 11, 15), None)
+    assert t.id.startswith("t") and len(t.id) == 13
+    assert added(c, {"member_id": "m", "text": "x", "due": None}).todos[1].due is None
+
+
+@pytest.mark.parametrize(
+    "data,error",
+    [
+        ({"member_id": "ghost", "text": "x"}, "unknown member"),
+        ({"member_id": "m", "text": "   "}, "empty text"),
+        ({"member_id": "m", "text": "x" * 201}, "invalid todo"),
+        ({"member_id": "m", "text": "x", "due": "zítra"}, "invalid todo"),
+        ("nope", "bad data"),
+    ],
+)
+def test_added_rejects_bad_input(data, error):
+    with pytest.raises(TodoError, match=error):
+        added(cfg(), data)
+
+
+def test_added_refuses_beyond_the_limit():
+    full = cfg(*[Todo(id=f"x{i}", member_id="m", text="t") for i in range(300)])
+    with pytest.raises(TodoError, match="too many"):
+        added(full, {"member_id": "m", "text": "one more"})
+
+
+def test_deleted():
+    c = cfg(Todo(id="a", member_id="m", text="a"), Todo(id="b", member_id="m", text="b"))
+    assert [t.id for t in deleted(c, "a").todos] == ["b"]
+    assert deleted(c, "zzz") is None
+
+
+def test_display_add_and_delete_over_the_socket(data_dir):
+    app = create_app(data_dir)
+    app.state.store.save_config(cfg())
+    with LocalClient(app, client=("127.0.0.1", 50000)) as c, c.websocket_connect("/ws") as ws:
+        ws.receive_json(), ws.receive_json()
+        ws.send_json({"type": "action", "id": "x1", "entity_id": "todo.new", "command": "add",
+                      "data": {"member_id": "m", "text": "Píchnout ouška", "due": None}})
+        msgs = [ws.receive_json(), ws.receive_json()]
+        assert {"type": "action_result", "id": "x1", "ok": True} in msgs
+        [todo] = app.state.store.config.todos
+        assert todo.text == "Píchnout ouška"
+        ws.send_json({"type": "action", "id": "x2", "entity_id": "todo.new", "command": "add", "data": {"member_id": "m", "text": ""}})
+        assert ws.receive_json() == {"type": "action_result", "id": "x2", "ok": False, "error": "empty text"}
+        ws.send_json({"type": "action", "id": "x3", "entity_id": f"todo.{todo.id}", "command": "delete"})
+        msgs = [ws.receive_json(), ws.receive_json()]
+        assert {"type": "action_result", "id": "x3", "ok": True} in msgs
+    assert app.state.store.config.todos == []
+
+
+def test_view_only_viewer_cannot_add(data_dir):
+    app = create_app(data_dir)
+    app.state.store.save_config(cfg().model_copy(update={"public_view": True}))
+    with _anon(app) as c, c.websocket_connect("/ws", headers=LAN_HDRS) as ws:
+        ws.receive_json()
+        assert ws.receive_json() == {"type": "viewer", "can_act": False}
+        ws.send_json({"type": "action", "id": "v1", "entity_id": "todo.new", "command": "add", "data": {"member_id": "m", "text": "x"}})
+        assert ws.receive_json()["error"] == "view_only"
+    assert app.state.store.config.todos == []

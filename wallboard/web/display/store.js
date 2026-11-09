@@ -8,7 +8,8 @@
 //                             defaults to true for servers that never send it.)
 //   store.subscribe(fn)    -> unsubscribe; fn(state, change) where change is the message
 //                             type ("snapshot", "ha", "config", ...) or "connected"
-//   store.sendAction(id, command?) -> Promise<{ok, error}> (command: a vacuum-card button); rejects {ok:false, error:"timeout"} after
+//   store.sendAction(id, command?, data?) -> Promise<{ok, error}> (command: a vacuum-card button or a
+//                             todo action; data: its payload, e.g. a new todo); rejects {ok:false, error:"timeout"} after
 //                             5 s, {ok:false, error:"offline"} when the socket is not open
 //
 // Message formats: globals.md "Data model". Dependencies are injectable for node tests.
@@ -128,7 +129,7 @@ export function createStore({
     sock.onerror = () => {};
   }
 
-  function sendAction(entityId, command) {
+  function sendAction(entityId, command, data) {
     if (!ws || ws.readyState !== WS.OPEN) return Promise.reject({ ok: false, error: "offline" });
     const id = `a${++seq}-${Date.now().toString(36)}`;
     return new Promise((resolve, reject) => {
@@ -137,7 +138,10 @@ export function createStore({
         reject({ ok: false, error: "timeout" });
       }, ACTION_TIMEOUT_MS);
       pending.set(id, { resolve, reject, timer });
-      ws.send(JSON.stringify(command ? { type: "action", id, entity_id: entityId, command } : { type: "action", id, entity_id: entityId }));
+      const msg = { type: "action", id, entity_id: entityId };
+      if (command) msg.command = command;
+      if (data !== undefined) msg.data = data;
+      ws.send(JSON.stringify(msg));
     });
   }
 

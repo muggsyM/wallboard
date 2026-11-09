@@ -257,7 +257,8 @@ store.subscribe((state, change) => {
 });
 
 // Gestures: any touch pauses rotation (and wakes night mode) for touch_pause_seconds;
-// a horizontal swipe changes page; a tap outside [data-tap] goes to the next page.
+// a horizontal swipe changes page; a tap outside [data-tap] goes to the next page. Inside a
+// [data-modal] element (the Tasks add dialog) neither swipes nor taps page.
 app.addEventListener("pointerdown", (e) => {
   if (!e.isPrimary) return;
   const now = Date.now();
@@ -270,16 +271,21 @@ app.addEventListener("pointerdown", (e) => {
     gesture = null;
     return;
   }
-  gesture = { x: e.clientX, y: e.clientY, t: now, target: e.target };
+  // From the event path captured at dispatch: a page handler that ran first may already have
+  // re-rendered (detached) the touched element, so e.target.closest() could miss its parents.
+  const path = e.composedPath?.() ?? [];
+  const has = (attr) => path.some((n) => n?.dataset && attr in n.dataset);
+  gesture = { x: e.clientX, y: e.clientY, t: now, modal: has("modal"), tap: has("tap") };
 });
 app.addEventListener("pointerup", (e) => {
   if (!e.isPrimary || !gesture) return;
   const g = gesture;
   gesture = null;
   const now = Date.now();
+  if (g.modal) return;
   const kind = classifyGesture({ dx: e.clientX - g.x, dy: e.clientY - g.y, dt: now - g.t });
   if (kind === "next" || kind === "prev") go(kind, now);
-  else if (kind === "tap" && !g.target.closest?.("[data-tap]")) go("next", now);
+  else if (kind === "tap" && !g.tap) go("next", now);
 });
 app.addEventListener("pointercancel", () => (gesture = null));
 app.addEventListener("contextmenu", (e) => e.preventDefault());

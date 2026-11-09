@@ -138,7 +138,9 @@ async def display_ws(ws: WebSocket) -> None:
                 result = {"type": "action_result", "id": action_id, "ok": False, "error": "view_only"}
             elif is_todo_action(entity_id):
                 try:
-                    result = await handle_todo_action(ws.app.state.store, hub, entity_id, action_id, command)
+                    result = await handle_todo_action(
+                        ws.app.state.store, hub, entity_id, action_id, command, msg.get("data")
+                    )
                 except Exception:
                     result = {"type": "action_result", "id": action_id, "ok": False, "error": "action failed"}
             elif hub.on_action is None:

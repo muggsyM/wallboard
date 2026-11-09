@@ -306,5 +306,17 @@
   "admin_weather_upload": "Nahrát obrázky",
   "wx_flag_frozen": "Jinovatka",
   "admin_weather_frozen_rule": "při 0 °C a méně bez srážek; jinak → podle počasí",
-  "admin_weather_missing_current": "chybí – použije se obrázek podle počasí"
+  "admin_weather_missing_current": "chybí – použije se obrázek podle počasí",
+  "task_new_for": "Nový úkol – {name}",
+  "task_placeholder": "Napiš úkol…",
+  "task_due": "Termín",
+  "task_due_none": "bez termínu",
+  "task_due_today": "dnes",
+  "task_due_tomorrow": "zítra",
+  "task_due_week": "tento týden",
+  "task_due_nextweek": "příští týden",
+  "task_cancel": "Zrušit",
+  "task_save": "Uložit",
+  "task_delete": "Smazat",
+  "task_space": "mezera"
 }

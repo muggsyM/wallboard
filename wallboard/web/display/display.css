@@ -848,6 +848,99 @@ html.remote .wb-tile.view-only { cursor: default; }
 .wb-tcard-empty { font-size: 3cqw; opacity: .5; }
 .wb-tcard-more { font-size: 2.6cqw; opacity: .7; }
 
+/* Tasks: "+" in a card header, the held item and its Smazat / Zrušit row. */
+.wb-tcard-add {
+  flex: none;
+  width: 6.6cqw;
+  height: 6.6cqw;
+  margin-left: .6cqw;
+  border-radius: 50%;
+  border: .3cqw solid;
+  display: grid;
+  place-items: center;
+  font-size: 5.2cqw;
+  line-height: 1;
+}
+.wb-task.held { background: rgba(255, 255, 255, .12); margin: 0 -1.1cqw; padding: .7cqw 1.1cqw; border-radius: 1.3cqw; }
+.wb-task-menu { display: flex; gap: 1.3cqw; margin-top: -.4cqw; }
+.wb-task-act { padding: 1.1cqw 2.4cqw; border-radius: 99cqw; border: .2cqw solid rgba(255, 255, 255, .4); font-size: 2.8cqw; }
+.wb-task-act.del { background: #c9575e; border-color: #c9575e; }
+
+/* Tasks add dialog (task-dialog.js): veil, sheet at the top, keyboard docked at the bottom. */
+.wb-tadd {
+  position: absolute;
+  inset: -5cqw -5cqw -9cqw;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: rgba(10, 11, 13, .62);
+  touch-action: none;
+  user-select: none;
+}
+.wb-tadd-sheet {
+  margin: 23cqw 3.7cqw 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2.6cqw;
+  padding: 3.3cqw 3.7cqw 3.7cqw;
+  border-radius: 3cqw;
+  background: #2f3031;
+  box-shadow: 0 2cqw 6cqw rgba(0, 0, 0, .5);
+}
+.wb-tadd-top { display: flex; align-items: center; gap: 1.7cqw; }
+.wb-tadd-av { width: 5.9cqw; height: 5.9cqw; flex: none; border-radius: 50%; display: grid; place-items: center; font: 700 3cqw system-ui, sans-serif; }
+.wb-tadd-title { flex: 1; min-width: 0; font-size: 4.8cqw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wb-tadd-x { width: 6.7cqw; height: 6.7cqw; flex: none; border-radius: 50%; background: rgba(255, 255, 255, .1); display: grid; place-items: center; font-size: 4.4cqw; line-height: 1; }
+.wb-tadd-field {
+  min-height: 6.5cqw;
+  padding: 2cqw 2.4cqw;
+  border-radius: 1.9cqw;
+  background: rgba(0, 0, 0, .35);
+  border: .3cqw solid var(--wb-member);
+  font-size: 4.4cqw;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.wb-tadd-ph { opacity: .4; }
+.wb-tadd-ph[hidden] { display: none; }
+.wb-tadd-text { white-space: pre-wrap; }
+.wb-tadd-caret { display: inline-block; width: .4cqw; height: 5cqw; margin-left: .3cqw; vertical-align: -.9cqw; background: #fff; animation: wb-caret 1s steps(1) infinite; }
+@keyframes wb-caret { 50% { opacity: 0; } }
+.wb-tadd-due { display: flex; flex-direction: column; gap: 1.3cqw; }
+.wb-tadd-lbl { font-size: 2.6cqw; opacity: .6; letter-spacing: .3cqw; text-transform: uppercase; }
+.wb-tadd-chips { display: flex; flex-wrap: wrap; gap: 1.3cqw; }
+.wb-tadd-chip { padding: 1.3cqw 2.4cqw; border-radius: 99cqw; border: .2cqw solid rgba(255, 255, 255, .35); font-size: 3cqw; white-space: nowrap; }
+.wb-tadd-chip.on { background: var(--wb-member); border-color: var(--wb-member); color: #1d1d1d; }
+.wb-tadd-note { min-height: 2.6cqw; font-size: 2.6cqw; opacity: .6; }
+.wb-tadd-btns { display: flex; justify-content: flex-end; gap: 1.9cqw; }
+.wb-tadd-btn { padding: 2cqw 4.1cqw; border-radius: 99cqw; border: .2cqw solid rgba(255, 255, 255, .4); font-size: 3.5cqw; }
+.wb-tadd-btn.save { border-color: transparent; padding: 2cqw 5.2cqw; }
+.wb-tadd-btn.save.off { opacity: .4; }
+.wb-kb {
+  display: flex;
+  flex-direction: column;
+  gap: 1.3cqw;
+  padding: 2.4cqw 1.9cqw 3.2cqw;
+  background: #1c1d1e;
+  border-top: .2cqw solid rgba(255, 255, 255, .1);
+}
+.wb-kb-row { display: flex; justify-content: center; gap: .9cqw; }
+.wb-key {
+  width: 7.8cqw;
+  height: 8.9cqw;
+  flex: none;
+  border-radius: 1.5cqw;
+  background: rgba(255, 255, 255, .14);
+  display: grid;
+  place-items: center;
+  font-size: 4.1cqw;
+}
+.wb-key.down { background: rgba(255, 255, 255, .34); }
+.wb-key-shift, .wb-key-back, .wb-key-num, .wb-key-abc { width: 12cqw; font-size: 3.4cqw; }
+.wb-key-shift.on { background: rgba(255, 255, 255, .5); color: #1d1d1d; }
+.wb-key-space { width: 48cqw; font-size: 2.8cqw; }
+
 /* ---------- toast (toast.js) ---------- */
 .wb-toast {
   position: fixed;
