@@ -4,6 +4,8 @@
 //   renderHeader(el, state, {titleKey, subtitle})
 //     no titleKey -> "today" layout: larger clock, long date, subtitle under the weather
 //     titleKey    -> smaller clock, bold title with the subtitle beside it
+//     hideTitle   -> with titleKey: the same layout without the title word (Month shows
+//                    only the range, "listopad – prosinec 2026")
 //
 // Clocks are any element with data-clock="time" | "date" (the night overlay too). The
 // shell calls refreshClocks() from its 1 s tick: no minute timer to drift when NTP steps
@@ -72,12 +74,12 @@ function peopleHtml(config, ha) {
   return `<div class="wb-people">${avatars.join("")}</div>`;
 }
 
-export function renderHeader(el, state, { titleKey, subtitle } = {}) {
+export function renderHeader(el, state, { titleKey, subtitle, hideTitle = false } = {}) {
   const now = new Date();
   const sub = subtitle ? `<span class="wb-sub">${esc(subtitle)}</span>` : "";
   const left = titleKey
     ? `<div class="wb-clock" data-clock="time">${clockText("time", now)}</div>
-       <div class="wb-title"><b>${esc(t(titleKey))}</b>${sub}</div>`
+       <div class="wb-title${hideTitle ? " wb-title-sub" : ""}">${hideTitle ? "" : `<b>${esc(t(titleKey))}</b>`}${sub}</div>`
     : `<div class="wb-clock" data-clock="time">${clockText("time", now)}</div>
        <div class="wb-date" data-clock="date">${clockText("date", now)}</div>`;
   const offline = isOffline(state) ? `<span class="wb-offline" title="${esc(t("offline"))}"></span>` : "";

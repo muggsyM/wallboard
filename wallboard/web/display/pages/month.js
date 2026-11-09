@@ -1,12 +1,13 @@
-// Month: a rolling Monday-first grid of `weeks` weeks (4..6, default 4) starting on the
-// Monday of the current week, filling the page below the header (subtitle: the month(s)
-// covered). Open grid on the chalkboard (mockup variant L, mesic-detail): each day starts
-// with a small day number top-left (today: in a small red circle; the 1st of a month and
-// the first cell add the short month name) with the Czech holiday name (pink) beside it,
-// then up to `max_events_per_day` entries (default 5) as member-colour strips: timed ones a
-// small time line above a title of up to 3 lines, all-day ones up to 2 lines. Every
-// member's all-day entry is its own strip, even with identical titles ("Školka" twice).
-// Past days are dimmed, weekend numbers tinted.
+// Month: a rolling Monday-first grid of `weeks` weeks (4..6, default 6) starting on the
+// Monday of the current week, filling the page below the header (the header shows only the
+// month(s) covered, no "Month" title). Open grid on the chalkboard (mockup "prani", from
+// variant L): each day starts with its number centred (today: in a dark grey circle; the 1st
+// of a month and the first cell add the short month name); a week with a Czech holiday gets
+// a one-line holiday row under the numbers (pink; empty in the other cells so lanes line
+// up); then up to `max_events_per_day` entries (default 5) as one-line member-colour strips
+// ("10:30 Title", ellipsis; the day window has the full text). Every member's all-day entry
+// is its own strip, even with identical titles ("Školka" twice). Past days are dimmed,
+// weekend numbers tinted.
 //
 // Multi-day all-day events are continuous bars (lib/layout.js assignLanes + barPiece): each
 // bar keeps one lane (vertical slot) across its week row, lanes come right after the day
@@ -38,7 +39,7 @@ import { chipTime } from "./week.js";
 
 const MINUTE_CHECK_MS = 20000;
 const DEFAULT_MAX = 5;
-const DEFAULT_WEEKS = 4;
+const DEFAULT_WEEKS = 6;
 export const clampMaxEvents = (v) => clampSetting(v, 1, 6, DEFAULT_MAX);
 export const clampWeeks = (v) => clampSetting(v, 4, 6, DEFAULT_WEEKS);
 
@@ -96,7 +97,7 @@ function entry(ev, iso, tz, now, today) {
   else if (iso === today && isPast(ev, now, tz)) e.classList.add("past");
   const time = chipTime(ev, iso, tz);
   if (time) e.append(el("b", "", time));
-  // Timed titles clamp to 3 lines, all-day ones to 2 (display.css).
+  // One line: the time inline before the title (display.css).
   ti.textContent = ev.title ?? "";
   e.append(ti);
   return e;
@@ -106,7 +107,7 @@ const overflows = (box) => box.scrollHeight > box.clientHeight + 1;
 
 // One day cell. `lanes` = the week row's Map event -> lane.
 function dayCell(d) {
-  const { iso, column, first, today, events, lanes, holiday, cap, tz, now, selected } = d;
+  const { iso, column, first, today, events, lanes, holiday, holRow, cap, tz, now, selected } = d;
   const c = el("div", "wb-mc");
   // A tap opens the day window; data-tap keeps the shell from paging on it.
   c.dataset.tap = "";
@@ -116,14 +117,13 @@ function dayCell(d) {
   if (iso === today) c.classList.add("today");
   if (iso === selected) c.classList.add("sel");
 
-  // Small number top-left (today's in the circle); the first cell and the 1st of a month
-  // add the short month name ("2 lis"), but not beside today's circle; the holiday after.
+  // Centred number (today's in the circle); the first cell and the 1st of a month add the
+  // short month name ("2 lis"), but not beside today's circle.
   const head = el("div", "wb-mc-n");
   head.append(el("span", "wb-mc-d", String(Number(iso.slice(8)))));
   if ((iso.endsWith("-01") || first) && iso !== today) {
     head.append(el("small", "wb-mc-m", fmtDayMonthShort(noonOf(iso, tz)).month));
   }
-  if (holiday) head.append(el("span", "wb-mc-hol", holiday));
 
   const barsHere = events.filter((ev) => lanes.has(ev));
   // Each member's all-day entry is its own strip here (the owner wants two "Školka"
@@ -131,6 +131,9 @@ function dayCell(d) {
   const others = events.filter((ev) => !lanes.has(ev));
   const laneRows = barsHere.length ? Math.max(...barsHere.map((ev) => lanes.get(ev))) + 1 : 0;
   const top = [head];
+  // The holiday row: present in every cell of a week that has a holiday, so the bar lanes
+  // below start at the same height across the row.
+  if (holRow) top.push(el("div", "wb-mc-hol", holiday || "\u00a0"));
   for (let lane = 0; lane < laneRows; lane++) {
     const ev = barsHere.find((x) => lanes.get(x) === lane);
     top.push(ev ? bar(ev, iso, column) : el("div", "wb-me bar gap", "\u00a0"));
@@ -184,7 +187,7 @@ export default {
       const today = localDate(now, tz);
       const days = weekGrid(today, weeks);
       const subtitle = fmtMonthRange(noonOf(days[0], tz), noonOf(days[days.length - 1], tz));
-      renderHeader(header, state, { titleKey: "month", subtitle });
+      renderHeader(header, state, { titleKey: "month", subtitle, hideTitle: true });
       win.update(state);
       const key = { tz, minute: Math.floor(now / 60000), calendar: state.calendar, lang: getLanguage() };
       if (!force && same(key, last)) return;
@@ -197,10 +200,12 @@ export default {
       for (let w = 0; w < weeks; w++) {
         const week = days.slice(w * 7, w * 7 + 7);
         const lanes = assignLanes(week, [...new Set(week.flatMap((iso) => byDay.get(iso)))]);
+        const holOf = (iso) => (typeof holidays[iso] === "string" ? holidays[iso] : "");
+        const holRow = week.some((iso) => holOf(iso));
         week.forEach((iso, column) => {
           cells.push(dayCell({
             iso, column, first: w === 0 && column === 0, today, events: byDay.get(iso), lanes,
-            holiday: typeof holidays[iso] === "string" ? holidays[iso] : "", cap, tz, now, selected: win.iso(),
+            holiday: holOf(iso), holRow, cap, tz, now, selected: win.iso(),
           }));
         });
       }

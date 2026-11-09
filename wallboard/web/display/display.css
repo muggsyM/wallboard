@@ -228,12 +228,14 @@ html.remote #app {
 .wb-empty { font-size: 3cqw; opacity: .4; padding-top: 1cqw; }
 
 /* ---------- month page ---------- */
-/* Mockup variant L (mesic-detail; chalkboard, open grid): no cell boxes, a small day number
-   top-left with the holiday beside it, today in a small red circle, events as member-colour
-   strips in 1.8cqw (time on a small line above a title of up to 3 lines; all-day entries up
-   to 2 lines; multi-day bars one line so lanes line up). Merged identical all-day entries
-   are a neutral strip with member dots. Past days are dimmed. */
-.wb-page[data-page="month"] { gap: 2.4cqw; }
+/* Mockup "prani" (from variant L; chalkboard, open grid): no cell boxes, the day number
+   centred, today in a dark grey circle (no extra colour on a colourful grid), a holiday row
+   under the numbers in weeks that have one, events as one-line member-colour strips in
+   1.8cqw ("10:30 Title", ellipsis). Merged identical all-day entries are a neutral strip
+   with member dots. Past days are dimmed. The header shows only the range (no title word);
+   extra air between it and the weekday row. */
+.wb-page[data-page="month"] { gap: 4.5cqw; }
+.wb-title-sub .wb-sub { margin-left: 0; font-size: 3.6cqw; opacity: .8; }
 .wb-month {
   --wb-mgap: .5cqw; /* column gap: bar pieces reach half-way into it */
   flex: 1;
@@ -269,10 +271,10 @@ html.remote #app {
   flex: none;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: .8cqw;
-  height: 6.4cqw;
-  padding-left: .4cqw;
-  font-size: 4.6cqw;
+  height: 5.8cqw;
+  font-size: 4.4cqw;
   line-height: 1;
   white-space: nowrap;
   overflow: hidden;
@@ -282,28 +284,27 @@ html.remote #app {
 .wb-mc.today .wb-mc-d {
   display: grid;
   place-items: center;
-  width: 6.4cqw;
-  height: 6.4cqw;
+  width: 5.8cqw;
+  height: 5.8cqw;
   border-radius: 50%;
-  background: var(--wb-today);
+  background: #4d4e50;
+  box-shadow: 0 0 0 .25cqw rgba(255, 255, 255, .25);
   color: #fff;
 }
 /* Month abbreviation beside the number: the first cell and the 1st of a month. */
 .wb-mc-m { flex: none; font-size: .6em; opacity: .8; margin-left: -.3cqw; }
 .wb-mc.past .wb-mc-n, .wb-mc.past .wb-me, .wb-mc.past .wb-mc-more { opacity: .55; }
+/* One line under the numbers (empty in the week's other cells, so lanes line up). */
 .wb-mc-hol {
-  flex: 1 1 0;
+  flex: none;
   min-width: 0;
-  font-size: 2cqw;
-  line-height: 1.05;
+  font-size: 1.8cqw;
+  line-height: 1.2;
   color: #ffd0d8;
-  white-space: normal;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+  text-align: center;
+  white-space: nowrap;
   overflow: hidden;
-  hyphens: auto;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
 }
 /* Colours come from the member colour (background + lib/color.js readableText). */
 .wb-me {
@@ -315,18 +316,11 @@ html.remote #app {
   background: rgba(255, 255, 255, .12);
   overflow: hidden;
 }
-/* Timed entries: the time on its own small line, then the title clamped to 3 lines. The
-   clamp sits on the inner span (no padding), so a hidden line's diacritics never show. */
-.wb-me b { display: block; font-size: .8em; opacity: .85; line-height: 1.1; }
-.wb-me-ti {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  hyphens: auto;
-  overflow-wrap: anywhere;
-}
-.wb-me.all .wb-me-ti { -webkit-line-clamp: 2; }
+/* One line per entry: the time inline before the title, ellipsis at the end (nowrap rather
+   than a 1-line clamp, whose hidden second line can show its diacritics in the padding). */
+.wb-me { white-space: nowrap; text-overflow: ellipsis; }
+.wb-me b { font-weight: 400; opacity: .85; margin-right: .5cqw; }
+.wb-me-ti { overflow: hidden; text-overflow: ellipsis; }
 .wb-me.past { opacity: .45; }
 /* Merged identical all-day entry: neutral strip, first member's colour on the left, a dot
    per member before the title. */
@@ -493,14 +487,6 @@ html.remote #app {
   border-radius: 3cqw;
   padding: 2.6cqw 2.8cqw;
 }
-.wb-today-top {
-  flex: none;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 2cqw;
-  margin-bottom: 1.4cqw;
-}
 .wb-lbl {
   flex: none;
   font-size: 2.7cqw;
@@ -508,59 +494,36 @@ html.remote #app {
   text-transform: uppercase;
   opacity: .65;
   font-weight: 400;
+  margin-bottom: 1.6cqw;
 }
-.wb-alldays {
-  min-width: 0;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 1cqw;
-}
-/* Colours come from the member colour (lib/color.js readableText). */
-.wb-allday {
-  max-width: 100%;
-  font-size: 3.2cqw;
-  font-weight: 400;
-  padding: .9cqw 2.2cqw;
-  border-radius: 5cqw;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.wb-tl {
-  flex: none;
-  border-left: .5cqw solid rgba(255, 255, 255, .15);
-  padding-left: 3.4cqw;
-  margin-left: 1cqw;
-}
+/* Today list (mockup "prani"): rows like the next-day cards, a member-colour dot and the
+   text; all-day events first, then timed ones ("10:30 Title", location below). */
+.wb-tl { flex: none; }
 .wb-ev {
   display: flex;
   align-items: flex-start;
-  gap: 2cqw;
-  padding: 1.2cqw 0;
-  font-size: 3.9cqw;
-  line-height: 1.2;
+  gap: 1.6cqw;
+  padding: .9cqw 0;
+  font-size: 3.5cqw;
+  line-height: 1.15;
 }
 .wb-ev.past { opacity: .4; }
-.wb-ev-t { width: 10.5cqw; flex: none; font-weight: 400; font-variant-numeric: tabular-nums; }
-.wb-who {
-  width: 6cqw;
-  height: 6cqw;
+.wb-ev-dot {
+  width: 2cqw;
+  height: 2cqw;
   flex: none;
   border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 2.8cqw;
+  margin-top: 1cqw;
 }
+.wb-ev-t { margin-right: 1cqw; opacity: .8; font-variant-numeric: tabular-nums; }
 .wb-ev-ti { flex: 1; min-width: 0; }
 .wb-ev-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
-.wb-ev-loc { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wb-ev-loc { font-size: 2.9cqw; opacity: .6; }
+.wb-ev-loc { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 2.6cqw; opacity: .6; }
 .wb-now {
   position: relative;
   height: 0;
-  margin-left: -4.2cqw;
-  border-top: .5cqw solid #ff6b6b;
+  margin: 1.2cqw 0 1.2cqw .4cqw;
+  border-top: .4cqw solid #ff6b6b;
 }
 .wb-now-dot {
   position: absolute;
@@ -571,7 +534,7 @@ html.remote #app {
   border-radius: 50%;
   background: #ff6b6b;
 }
-.wb-tl .wb-more { padding: 1cqw 0 0 12.5cqw; font-size: 3cqw; }
+.wb-tl .wb-more { padding: 1cqw 0 0 3.6cqw; font-size: 3cqw; opacity: .7; }
 .wb-tl .wb-empty { padding: 1.3cqw 0; font-size: 3.6cqw; }
 
 .wb-cards3 {

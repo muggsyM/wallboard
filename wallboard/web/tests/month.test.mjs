@@ -69,13 +69,13 @@ test("bars crossing the 1st of a month stay one row piece in the rolling grid", 
   assert.deepEqual(barPiece(fair, "2026-12-01", 1), { title: true, roundL: true, roundR: false, extL: false, extR: true });
 });
 
-test("settings: weeks (default 4, 4..6) and max_events_per_day (default 5, 1..6)", () => {
+test("settings: weeks (default 6, 4..6) and max_events_per_day (default 5, 1..6)", () => {
   assert.deepEqual(month.settings, [
-    { key: "weeks", type: "number", labelKey: "weeks_shown", default: 4, min: 4, max: 6 },
+    { key: "weeks", type: "number", labelKey: "weeks_shown", default: 6, min: 4, max: 6 },
     { key: "max_events_per_day", type: "number", labelKey: "max_events_per_day", default: 5, min: 1, max: 6 },
   ]);
   const opts = pageOptions(month, {});
-  assert.equal(clampWeeks(opts.weeks), 4);
+  assert.equal(clampWeeks(opts.weeks), 6);
   assert.equal(clampMaxEvents(opts.max_events_per_day), 5);
 });
 
@@ -94,7 +94,7 @@ test("weeks is clamped to 4..6", () => {
   assert.equal(clampWeeks("6"), 6);
   assert.equal(clampWeeks(4.4), 4);
   assert.equal(clampWeeks("5"), 5);
-  assert.equal(clampWeeks(""), 4);
-  assert.equal(clampWeeks(null), 4);
-  assert.equal(clampWeeks("x"), 4);
+  assert.equal(clampWeeks(""), 6);
+  assert.equal(clampWeeks(null), 6);
+  assert.equal(clampWeeks("x"), 6);
 });

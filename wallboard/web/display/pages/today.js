@@ -8,8 +8,9 @@
 //   No photos: the frame is hidden and the timeline takes its space. A photo that fails
 //   to load stays the visit's photo (frame hidden) until it is deleted or the page
 //   re-mounts, so a broken file is never re-fetched or swapped mid-visit (photoAction).
-// - Timeline: all-day chips beside the "Today" label, then timed events in start order
-//   (member initial in the member colour, title, location line); finished events faded;
+// - Today list (mockup "prani"): the "Today" label, then one row per event in the style of
+//   the next-day cards: a member-colour dot and the text. All-day events first, then timed
+//   ones in start order ("10:30 Title", location on a second line); finished events faded;
 //   the red "now" line sits after the last finished event. When it overflows, pickVisible
 //   hides finished timed events first, then trims from the end, plus "+N more".
 // - Next 3 days: weekday, forecast icon and high, up to 2 events (colour dot), "+N more".
@@ -24,7 +25,6 @@ import { renderHeader, safeColor } from "../header.js";
 import { t, getLanguage, fmtWeekdayShort } from "../../shared/i18n.js";
 import { WEATHER_ICONS } from "../../shared/ha-format.js";
 import { localDate, addDays, noonOf, bucket, isPast, pickVisible } from "../lib/layout.js";
-import { readableText } from "../lib/color.js";
 import { renderTile } from "../tile.js";
 import { chipTime } from "./week.js";
 import { createDayWindow } from "../lib/day-window.js";
@@ -88,28 +88,22 @@ function el(tag, cls, text) {
   return n;
 }
 
-function solid(node, color) {
-  const c = safeColor(color);
-  node.style.background = c;
-  node.style.color = readableText(c);
-}
-
-function allDayChip(ev) {
-  const c = el("span", "wb-allday", ev.title ?? "");
-  solid(c, ev.color);
-  return c;
-}
-
-function timedRow(ev, today, tz, now, initials) {
+// One row of the today list: member-colour dot, then "10:30 Title" (all-day: the title)
+// and the location on a second line.
+function eventRow(ev, today, tz, now) {
   const r = el("div", "wb-ev");
-  if (isPast(ev, now, tz)) r.classList.add("past");
-  r.append(el("span", "wb-ev-t", chipTime(ev, today, tz)));
-  const who = el("span", "wb-who", initials.get(ev.member_id) ?? "•");
-  solid(who, ev.color);
+  if (ev.all_day) r.classList.add("all");
+  else if (isPast(ev, now, tz)) r.classList.add("past");
+  const dot = el("span", "wb-ev-dot");
+  dot.style.background = safeColor(ev.color);
   const ti = el("span", "wb-ev-ti");
-  ti.append(el("span", "wb-ev-title", ev.title ?? ""));
+  const title = el("span", "wb-ev-title");
+  const time = chipTime(ev, today, tz);
+  if (time) title.append(el("span", "wb-ev-t", time));
+  title.append(ev.title ?? "");
+  ti.append(title);
   if (ev.location) ti.append(el("span", "wb-ev-loc", ev.location));
-  r.append(who, ti);
+  r.append(dot, ti);
   return r;
 }
 
@@ -160,7 +154,7 @@ export default {
   mount(root, ctx) {
     root.innerHTML = `<div class="wb-page-header"></div>
       <div class="wb-pt"><div class="wb-photo" hidden><img decoding="async" alt=""><div class="wb-caption"><i class="mdi mdi-image-outline"></i><span></span></div></div>
-      <div class="wb-today"><div class="wb-today-top"><span class="wb-lbl"></span><div class="wb-alldays"></div></div><div class="wb-tl"></div></div></div>
+      <div class="wb-today"><span class="wb-lbl"></span><div class="wb-tl"></div></div></div>
       <div class="wb-cards3"></div>
       <div class="wb-qt"><div class="wb-tiles"></div></div>`;
     const header = root.querySelector(".wb-page-header");
@@ -169,7 +163,6 @@ export default {
     const caption = frame.querySelector(".wb-caption");
     const box = root.querySelector(".wb-today");
     const label = root.querySelector(".wb-lbl");
-    const alldays = root.querySelector(".wb-alldays");
     const tl = root.querySelector(".wb-tl");
     const cards = root.querySelector(".wb-cards3");
     const tilesEl = root.querySelector(".wb-tiles");
@@ -237,12 +230,13 @@ export default {
       for (const x of tiles) x.handle.update(state.ha?.[x.entityId]);
     }
 
-    function drawTimeline(events, today, tz, now, initials, cap) {
+    function drawTimeline(events, today, tz, now, cap) {
       const { shown, hidden } = pickVisible(events, cap, (ev) => isPast(ev, now, tz));
-      alldays.replaceChildren(...shown.filter((ev) => ev.all_day).map(allDayChip));
+      const allDay = shown.filter((ev) => ev.all_day);
       const timed = shown.filter((ev) => !ev.all_day);
-      const rows = timed.map((ev) => timedRow(ev, today, tz, now, initials));
+      const rows = timed.map((ev) => eventRow(ev, today, tz, now));
       if (timed.length) rows.splice(nowLineIndex(timed, now, tz), 0, nowLine());
+      rows.unshift(...allDay.map((ev) => eventRow(ev, today, tz, now)));
       if (!events.length) rows.push(el("div", "wb-empty", t("no_events")));
       if (hidden) rows.push(el("div", "wb-more", t("more_n", { n: hidden })));
       tl.replaceChildren(...rows);
@@ -265,15 +259,14 @@ export default {
       if (!force && same(key, last)) return;
       last = key;
       label.textContent = t("today");
-      const initials = new Map((members || []).map((m) => [m.id, m.initial]));
       const days = bucket(state.calendar?.events || [], today, NEXT_DAYS + 1, tz);
       const [todayEvents, ...next] = [...days.values()];
       cards.replaceChildren(...[...days.keys()].slice(1).map((iso, i) => card(iso, next[i], state.weather, tz)));
       for (const c of cards.children) c.classList.toggle("sel", c.dataset.iso === win.iso());
       // After layout: measuring needs the timeline in place. Largest selection that fits.
-      drawTimeline(todayEvents, today, tz, now, initials, todayEvents.length);
+      drawTimeline(todayEvents, today, tz, now, todayEvents.length);
       for (let cap = todayEvents.length - 1; cap >= 1 && overflows(box); cap--) {
-        drawTimeline(todayEvents, today, tz, now, initials, cap);
+        drawTimeline(todayEvents, today, tz, now, cap);
       }
     }
 
