@@ -477,6 +477,8 @@ def test_weather_upload_flags_and_display_topic(c, app):
     assert app.state.hub.snapshot()["photos"] == []
     assert app.state.hub.snapshot()["weather_pics"] == []
     h = {"X-Requested-With": "wallboard"}
+    r = c.put(f"/api/admin/weather/{pic['id']}/flags", json={"flags": ["frozen"]}, headers=h)
+    assert r.status_code == 200 and r.json()["flags"] == ["frozen"]
     r = c.put(f"/api/admin/weather/{pic['id']}/flags", json={"flags": ["rainy", "sunny", "rainy"]}, headers=h)
     assert r.status_code == 200 and r.json()["flags"] == ["sunny", "rainy"]
     assert app.state.hub.snapshot()["weather_pics"] == [{"id": pic["id"], "url": f"/media/{pic['id']}.jpg", "flags": ["sunny", "rainy"]}]

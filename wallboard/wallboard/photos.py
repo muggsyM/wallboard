@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 _RESERVED = re.compile(r"(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?", re.IGNORECASE)
 _PHOTO_FILE = re.compile(r"([0-9a-f]{32})(\.bg|\.thumb)?\.jpg")
 # Weather gallery flags; the display maps HA conditions onto them (web/display/lib/weather-pic.js).
-WEATHER_FLAGS = ("sunny", "clear-night", "partlycloudy", "cloudy", "fog", "rainy", "lightning", "snowy", "windy")
+WEATHER_FLAGS = ("sunny", "clear-night", "partlycloudy", "cloudy", "fog", "frozen", "rainy", "lightning", "snowy", "windy")
 
 
 @dataclass

@@ -303,5 +303,8 @@
   "wx_flag_snowy": "Sníh",
   "wx_flag_windy": "Vítr",
   "admin_weather_missing_uses": "chybí – použije se {flag}",
-  "admin_weather_upload": "Nahrát obrázky"
+  "admin_weather_upload": "Nahrát obrázky",
+  "wx_flag_frozen": "Jinovatka",
+  "admin_weather_frozen_rule": "při 0 °C a méně bez srážek; jinak → podle počasí",
+  "admin_weather_missing_current": "chybí – použije se obrázek podle počasí"
 }

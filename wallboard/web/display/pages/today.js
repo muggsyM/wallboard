@@ -26,7 +26,7 @@
 import { renderHeader, safeColor, currentWeather } from "../header.js";
 import { t, getLanguage, fmtWeekdayShort } from "../../shared/i18n.js";
 import { WEATHER_ICONS } from "../../shared/ha-format.js";
-import { pickPicture } from "../lib/weather-pic.js";
+import { pickPicture, toCelsius } from "../lib/weather-pic.js";
 import { localDate, addDays, noonOf, bucket, isPast, pickVisible } from "../lib/layout.js";
 import { renderTile } from "../tile.js";
 import { chipTime } from "./week.js";
@@ -192,9 +192,12 @@ export default {
 
     // Keep the visit's picture while it matches the condition; else pick another.
     function syncPicture(state) {
-      const condition = currentWeather(state)?.condition ?? "";
+      const cur = currentWeather(state);
+      const condition = cur?.condition ?? "";
+      const unit = state.ha?.[state.config?.weather_entity]?.attributes?.temperature_unit;
+      const tempC = toCelsius(cur?.temperature, unit); // frost picks the "frozen" pictures
       const pics = (state.weather_pics || []).filter((p) => !failed.has(p?.id));
-      const next = pickPicture(pics, condition, pic?.id ?? null);
+      const next = pickPicture(pics, condition, pic?.id ?? null, tempC);
       if (!next) {
         pic = null;
         showIcon(condition);

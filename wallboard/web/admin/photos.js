@@ -502,6 +502,7 @@ function weatherCard(pic) {
 // What the board shows for a flag without pictures: the first fallback flag that has some,
 // else the icon.
 function missingText(flag, count) {
+  if (flag === "frozen") return t("admin_weather_missing_current");
   const seen = new Set([flag]);
   for (let f = FALLBACK[flag]; f && !seen.has(f); f = FALLBACK[f]) {
     seen.add(f);
@@ -531,7 +532,7 @@ function renderWeather() {
       "tr",
       {},
       h("td", { text: flagName(f) }),
-      h("td", { class: "muted", text: FALLBACK[f] ? `→ ${flagName(FALLBACK[f])}` : "—" }),
+      h("td", { class: "muted", text: f === "frozen" ? t("admin_weather_frozen_rule") : FALLBACK[f] ? `→ ${flagName(FALLBACK[f])}` : "—" }),
       h("td", { class: n ? "ok" : "warn", text: n ? String(n) : missingText(f, count) }),
     );
   });

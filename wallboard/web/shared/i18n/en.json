@@ -303,5 +303,8 @@
   "wx_flag_snowy": "Snow",
   "wx_flag_windy": "Wind",
   "admin_weather_missing_uses": "missing – uses {flag}",
-  "admin_weather_upload": "Upload pictures"
+  "admin_weather_upload": "Upload pictures",
+  "wx_flag_frozen": "Frost",
+  "admin_weather_frozen_rule": "at 0 °C or below without precipitation; else → by the weather",
+  "admin_weather_missing_current": "missing – the picture for the current weather is used"
 }
