@@ -189,7 +189,7 @@ def _reconcile(old: Config, new: Config) -> tuple[Config, list[dict[str, Any]]]:
       it first. This keeps account, refresh token and calendars consistent without a hidden
       side effect inside a config save.
     - Calendars of a deleted member are dropped (cascade); any other calendar must reference
-      a connected account and an existing member.
+      a connected account and an existing member. Todos likewise (cascade / existing member).
     """
     errors: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -219,7 +219,18 @@ def _reconcile(old: Config, new: Config) -> tuple[Config, list[dict[str, Any]]]:
             calendars.append(cal)
         elif cal.member_id not in deleted:
             errors.append(_error(["calendars", i, "member_id"], "unknown member", "unknown_member"))
-    return new.model_copy(update={"calendars": calendars}), errors
+    # Todos of a deleted member go with it (cascade); any other must reference a member.
+    todos = []
+    todo_ids: set[str] = set()
+    for i, todo in enumerate(new.todos):
+        if todo.id in todo_ids:
+            errors.append(_error(["todos", i, "id"], "duplicate todo id", "duplicate_todo_id"))
+        todo_ids.add(todo.id)
+        if todo.member_id in seen:
+            todos.append(todo)
+        elif todo.member_id not in deleted:
+            errors.append(_error(["todos", i, "member_id"], "unknown member", "unknown_member"))
+    return new.model_copy(update={"calendars": calendars, "todos": todos}), errors
 
 
 def _ha_inputs(cfg: Config) -> tuple:

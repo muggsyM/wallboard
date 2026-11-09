@@ -7,7 +7,7 @@ import json
 import logging
 import os
 import secrets as _secrets
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -78,6 +78,18 @@ class Vacuum(BaseModel):
     rooms: list[VacuumRoom] = Field([], max_length=6)
 
 
+class Todo(BaseModel):
+    """One item of a member's task list (Tasks page). `done` is the local date it was ticked:
+    the display shows it struck through for the rest of that day, then hides it; ticked items
+    are pruned after TODO_KEEP_DAYS (todos.py)."""
+
+    id: str = Field(min_length=1, max_length=40)
+    member_id: str
+    text: str = Field(min_length=1, max_length=200)
+    due: date | None = None
+    done: date | None = None
+
+
 class PageRef(BaseModel):
     type: str
     enabled: bool = True
@@ -108,6 +120,7 @@ class Config(BaseModel):
     status_entities: list[str] = []
     vacuum: Vacuum | None = None
     quick_tiles: list[str] = []  # <= 4 entity_ids, each must be in tiles
+    todos: list[Todo] = Field([], max_length=300)
     pages: list[PageRef] = _default_pages()
     photos_shuffle: bool = False
     # Show the board (view only) to non-logged-in devices on the LAN; see auth.public_view_enabled.

@@ -154,6 +154,10 @@ export function cleanConfig(config) {
     t.icon = blank(t.icon);
   }
   c.status_entities = c.status_entities.filter((e) => e.trim());
+  // A task row left empty is dropped; text is trimmed; an empty date is "no due date".
+  c.todos = (c.todos || [])
+    .map((x) => ({ ...x, text: String(x.text ?? "").trim(), due: blank(x.due) }))
+    .filter((x) => x.text);
   return c;
 }
 

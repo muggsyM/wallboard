@@ -140,7 +140,7 @@ function renderFamily() {
       h(
         "div",
         { class: "grid-member" },
-        field(t("admin_member_name"), textInput(m, "name", { onchange: () => rerender("google") }), { loc: `members.${i}.name` }),
+        field(t("admin_member_name"), textInput(m, "name", { onchange: () => { rerender("google"); rerender("tasks"); } }), { loc: `members.${i}.name` }),
         field(t("admin_member_initial"), textInput(m, "initial", { maxLength: 2 }), { loc: `members.${i}.initial` }),
         field(t("admin_member_color"), textInput(m, "color", { type: "color" }), { loc: `members.${i}.color` }),
       ),
@@ -156,10 +156,47 @@ function renderFamily() {
       c.members.push({ id: M.newId("m"), name: "", initial: "", color: MEMBER_COLORS[c.members.length % MEMBER_COLORS.length], person_entity: null });
       markDirty();
       rerender("family");
+      rerender("tasks");
       rerender("google");
       document.querySelector("#family .card-row:last-child input")?.focus();
     }),
   );
+}
+
+// Tasks page lists: per member, rows of text, due date, done and remove (config.todos).
+function renderTasks() {
+  const c = S.config;
+  c.todos ||= [];
+  const today = new Date().toLocaleDateString("sv"); // local YYYY-MM-DD
+  const groups = c.members.map((m) => {
+    const rows = c.todos
+      .map((x, i) => [x, i])
+      .filter(([x]) => x.member_id === m.id)
+      .map(([x, i]) =>
+        h(
+          "div",
+          { class: "task-row", dataset: { loc: `todos.${i}` } },
+          h("input", { type: "checkbox", title: t("admin_task_done"), "aria-label": t("admin_task_done"), checked: !!x.done, onchange: (e) => { x.done = e.target.checked ? today : null; markDirty(); } }),
+          textInput(x, "text", { maxLength: 200, placeholder: t("admin_task_text") }),
+          textInput(x, "due", { type: "date", nullable: true }),
+          h("button", { type: "button", class: "chip-x", "aria-label": t("admin_remove"), onclick: () => { c.todos.splice(i, 1); markDirty(); rerender("tasks"); } }, "×"),
+        ),
+      );
+    return h(
+      "div",
+      { class: "card-row" },
+      h("strong", { text: m.name || t("admin_unnamed") }),
+      h("div", { class: "stack" }, rows),
+      h("div", { class: "row" }, button(t("admin_add_task"), () => {
+        c.todos.push({ id: M.newId("t"), member_id: m.id, text: "", due: null, done: null });
+        markDirty();
+        rerender("tasks");
+        const inputs = document.querySelectorAll("#tasks .task-row input[type=text]");
+        [...inputs].find((n) => !n.value)?.focus();
+      }, "small")),
+    );
+  });
+  return section("tasks", "admin_tasks", h("p", { class: "hint", text: t("admin_tasks_hint") }), h("div", { class: "stack", dataset: { loc: "todos" } }, groups));
 }
 
 function removeMember(i) {
@@ -173,8 +210,10 @@ function removeMember(i) {
   if (!confirm(t("admin_confirm_remove_member", { name }))) return;
   c.members.splice(i, 1);
   c.calendars = c.calendars.filter((cal) => cal.member_id !== m.id); // the server cascades the same way
+  c.todos = (c.todos || []).filter((x) => x.member_id !== m.id);
   markDirty();
   rerender("family");
+  rerender("tasks");
   rerender("google");
 }
 
@@ -596,7 +635,7 @@ function renderPassword() {
 
 // ---- rendering + errors -------------------------------------------------------------------------
 
-const SECTIONS = { general: renderGeneral, family: renderFamily, google: renderGoogle, ha: renderHA, pages: renderPages, password: renderPassword };
+const SECTIONS = { general: renderGeneral, family: renderFamily, tasks: renderTasks, google: renderGoogle, ha: renderHA, pages: renderPages, password: renderPassword };
 
 function rerender(id) {
   const old = document.getElementById(id);

@@ -791,6 +791,75 @@ html.remote .wb-tile.view-only { cursor: default; }
 }
 .wb-ph-empty .mdi { font-size: 16cqw; line-height: 1; opacity: .6; }
 
+/* ---------- tasks page (pages/tasks.js) ---------- */
+/* Mockup "prani" screen 3: four member lists, 2 x 2, filling the page below the header. */
+.wb-page[data-page="tasks"] { gap: 4.5cqw; }
+.wb-tasks {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 2.6cqw;
+  padding-bottom: 5cqw; /* clear of the page dots */
+}
+.wb-tcard {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 1.7cqw;
+  padding: 2.8cqw 2.8cqw 2.4cqw;
+  border-radius: 3cqw;
+  background: var(--wb-panel);
+}
+.wb-tcard-h { flex: none; display: flex; align-items: center; gap: 1.5cqw; }
+.wb-tcard-av {
+  width: 5.2cqw;
+  height: 5.2cqw;
+  flex: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #1d1d1d;
+  font: 700 2.6cqw system-ui, sans-serif;
+}
+.wb-tcard-nm { flex: 1; min-width: 0; font-size: 4.3cqw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wb-tcard-n { flex: none; font-size: 2.6cqw; opacity: .6; }
+.wb-tcard-rule { flex: none; height: .4cqw; border-radius: .2cqw; opacity: .8; }
+.wb-tcard-items { min-height: 0; display: flex; flex-direction: column; gap: 1.5cqw; }
+.wb-task { display: flex; align-items: flex-start; gap: 1.5cqw; font-size: 3.2cqw; line-height: 1.15; }
+.wb-task-box {
+  position: relative;
+  width: 2.8cqw;
+  height: 2.8cqw;
+  flex: none;
+  margin-top: .35cqw;
+  box-sizing: border-box;
+  border: .3cqw solid rgba(255, 255, 255, .75);
+  border-radius: .7cqw;
+}
+.wb-task-t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.wb-task-due { font-size: .82em; opacity: .6; white-space: nowrap; }
+.wb-task-due.soon { opacity: 1; color: var(--wb-warn); }
+.wb-task.done { opacity: .45; }
+.wb-task.done .wb-task-t { text-decoration: line-through; }
+.wb-task.done .wb-task-box { background: rgba(255, 255, 255, .75); }
+.wb-task.done .wb-task-box::after {
+  content: "";
+  position: absolute;
+  left: .65cqw;
+  top: .15cqw;
+  width: .7cqw;
+  height: 1.4cqw;
+  border: solid #262727;
+  border-width: 0 .35cqw .35cqw 0;
+  transform: rotate(45deg);
+}
+.wb-tcard-empty { font-size: 3cqw; opacity: .5; }
+.wb-tcard-more { font-size: 2.6cqw; opacity: .7; }
+
 /* ---------- toast (toast.js) ---------- */
 .wb-toast {
   position: fixed;

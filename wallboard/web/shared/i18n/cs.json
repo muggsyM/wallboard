@@ -272,5 +272,15 @@
   "vacuum_stop": "klepnutím zastavit",
   "vacuum_started": "Vysávám: {room}",
   "vacuum_all_started": "Vysávám celý byt",
-  "vacuum_docking": "Robot jede do doku"
+  "vacuum_docking": "Robot jede do doku",
+  "tasks": "Úkoly",
+  "no_tasks": "Nic na práci",
+  "due_today": "dnes",
+  "due_tomorrow": "zítra",
+  "admin_tasks": "Úkoly",
+  "admin_tasks_hint": "Delší nebo dlouhodobé úkoly pro stránku Úkoly. Na tabuli se odškrtávají ťuknutím; odškrtnuté zmizí druhý den.",
+  "admin_task_text": "Úkol",
+  "admin_task_due": "Termín",
+  "admin_task_done": "Hotovo",
+  "admin_add_task": "Přidat úkol"
 }

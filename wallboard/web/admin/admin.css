@@ -109,7 +109,7 @@ body.settings {
 .field .hint, .hint { display: block; color: var(--muted); font-size: .85rem; margin: 4px 0 0; }
 p.hint { margin: 0 0 12px; }
 .settings input[type=text], .settings input[type=url], .settings input[type=number],
-.settings input[type=password], .settings input[type=time], .settings select {
+.settings input[type=password], .settings input[type=time], .settings input[type=date], .settings select {
   width: 100%;
   min-height: 44px;
   padding: 10px 12px;
@@ -409,3 +409,8 @@ body.photos { padding-bottom: 32px; }
 }
 .toast.error { background: #4a2328; }
 .photos .toast button.link { font-weight: 600; min-height: 36px; }
+
+/* Tasks section: done, text, due date, remove. */
+.task-row { display: grid; grid-template-columns: auto minmax(0, 1fr) 150px auto; gap: 8px; align-items: center; }
+@media (max-width: 520px) { .task-row { grid-template-columns: auto minmax(0, 1fr) auto; } .task-row input[type=date] { grid-column: 2; grid-row: 2; } }
+.settings input[type=date] { color-scheme: dark; }

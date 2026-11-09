@@ -272,5 +272,15 @@
   "vacuum_stop": "tap to stop",
   "vacuum_started": "Cleaning: {room}",
   "vacuum_all_started": "Cleaning the whole home",
-  "vacuum_docking": "Robot is going to the dock"
+  "vacuum_docking": "Robot is going to the dock",
+  "tasks": "Tasks",
+  "no_tasks": "Nothing to do",
+  "due_today": "today",
+  "due_tomorrow": "tomorrow",
+  "admin_tasks": "Tasks",
+  "admin_tasks_hint": "Bigger or longer-running jobs for the Tasks page. Tick them off on the board with a tap; ticked ones disappear the next day.",
+  "admin_task_text": "Task",
+  "admin_task_due": "Due",
+  "admin_task_done": "Done",
+  "admin_add_task": "Add task"
 }

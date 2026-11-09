@@ -722,3 +722,22 @@ def test_incident_stale_settings_page_cannot_drop_a_new_page(app):
     assert r.status_code == 409 and r.json() == {"detail": STALE}
     assert "photos" in [p.type for p in store.config.pages]
     assert store.config.rotation_seconds == 30
+
+
+def test_member_delete_cascades_todos_and_rejects_unknown_member(app):
+    with_family(app)
+    c = client(app)
+    data = full_config(app)
+    data["todos"] = [
+        {"id": "t1", "member_id": "anna", "text": "Gymnathon", "due": "2027-01-31"},
+        {"id": "t2", "member_id": "bob", "text": "Ponožky"},
+    ]
+    assert put_config(c, data).status_code == 200
+    data = full_config(app)
+    data["members"] = [m for m in data["members"] if m["id"] != "bob"]
+    assert put_config(c, data).status_code == 200
+    assert [t.id for t in app.state.store.config.todos] == ["t1"]
+    data = full_config(app)
+    data["todos"].append({"id": "t3", "member_id": "ghost", "text": "x"})
+    r = put_config(c, data)
+    assert r.status_code == 422 and r.json()["detail"][0]["loc"] == ["todos", 1, "member_id"]

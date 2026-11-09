@@ -14,6 +14,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.websockets import WebSocketDisconnect
 
 from .. import auth
+from ..todos import handle_todo_action, is_todo_action
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 WS_FORBIDDEN = 4403
@@ -135,6 +136,11 @@ async def display_ws(ws: WebSocket) -> None:
                 continue
             if not can_act:
                 result = {"type": "action_result", "id": action_id, "ok": False, "error": "view_only"}
+            elif is_todo_action(entity_id):
+                try:
+                    result = await handle_todo_action(ws.app.state.store, hub, entity_id, action_id, command)
+                except Exception:
+                    result = {"type": "action_result", "id": action_id, "ok": False, "error": "action failed"}
             elif hub.on_action is None:
                 result = {"type": "action_result", "id": action_id, "ok": False, "error": "not available"}
             else:

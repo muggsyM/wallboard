@@ -164,3 +164,17 @@ test("onlyServerOwnedChanged: Google accounts and shuffle yes, anything else no"
   assert.equal(M.onlyServerOwnedChanged(base, { ...copy(), calendars: [] }), false); // calendar change with the account kept
   assert.equal(M.onlyServerOwnedChanged(null, copy()), false);
 });
+
+test("cleanConfig trims task text, drops empty task rows, blank due date -> null", () => {
+  const c = cfg();
+  c.todos = [
+    { id: "t1", member_id: "a", text: "  Ponožky na lyže ", due: "", done: null },
+    { id: "t2", member_id: "a", text: "   ", due: "2026-12-01", done: null },
+    { id: "t3", member_id: "a", text: "Gymnathon", due: "2027-01-31", done: "2026-11-09" },
+  ];
+  const out = M.cleanConfig(c);
+  assert.deepEqual(out.todos, [
+    { id: "t1", member_id: "a", text: "Ponožky na lyže", due: null, done: null },
+    { id: "t3", member_id: "a", text: "Gymnathon", due: "2027-01-31", done: "2026-11-09" },
+  ]);
+});

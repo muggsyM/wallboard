@@ -6,7 +6,7 @@ import { PAGES, getPage } from "../display/pages/registry.js";
 const cs = JSON.parse(readFileSync(new URL("../shared/i18n/cs.json", import.meta.url), "utf8"));
 
 test("registry knows every page type, keyed by the module's own type", () => {
-  assert.deepEqual(Object.keys(PAGES), ["today", "week", "month", "home", "photos"]);
+  assert.deepEqual(Object.keys(PAGES), ["today", "week", "month", "home", "photos", "tasks"]);
   for (const [type, mod] of Object.entries(PAGES)) {
     assert.equal(mod.type, type);
     assert.equal(typeof mod.mount, "function");
