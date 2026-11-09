@@ -7,7 +7,7 @@ import copy
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-TOPICS = ("config", "ha", "calendar", "weather", "photos", "status")
+TOPICS = ("config", "ha", "calendar", "weather", "photos", "weather_pics", "status")
 SEND_TIMEOUT = 5  # seconds; a socket that can't take a message in time is dropped
 
 
@@ -21,6 +21,7 @@ class Hub:
             "calendar": None,
             "weather": None,
             "photos": [],
+            "weather_pics": [],
             "status": {"ha": False, "google": {}},
         }
         # Server build id (hash of web/); the display reloads when it changes.

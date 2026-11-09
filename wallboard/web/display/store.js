@@ -1,7 +1,7 @@
 // Display data store fed by WS /ws: holds the latest snapshot plus deltas, reconnects
 // with backoff 1, 2, 4 ... 30 s, and sends tile actions.
 //
-//   store.get()            -> {build, config, ha, calendar, weather, photos, status, viewer, connected}
+//   store.get()            -> {build, config, ha, calendar, weather, photos, weather_pics, status, viewer, connected}
 //                             (build: the server's web/ hash from the last snapshot, or null;
 //                             viewer: {can_act}, from the "viewer" message the server sends
 //                             right after each snapshot; false for a view-only visitor. It
@@ -16,7 +16,7 @@
 const BACKOFF_MIN_MS = 1000;
 const BACKOFF_MAX_MS = 30000;
 const ACTION_TIMEOUT_MS = 5000;
-const DELTA_TYPES = new Set(["calendar", "weather", "photos", "config", "status"]);
+const DELTA_TYPES = new Set(["calendar", "weather", "photos", "weather_pics", "config", "status"]);
 
 export function createStore({
   url,
@@ -31,6 +31,7 @@ export function createStore({
     calendar: null,
     weather: null,
     photos: [],
+    weather_pics: [],
     status: { ha: false, google: {} },
     viewer: { can_act: true },
     connected: false,
@@ -61,6 +62,7 @@ export function createStore({
         state.calendar = msg.calendar ?? null;
         state.weather = msg.weather ?? null;
         state.photos = msg.photos ?? [];
+        state.weather_pics = msg.weather_pics ?? [];
         state.status = msg.status ?? { ha: false, google: {} };
         return true;
       case "ha":
@@ -81,7 +83,7 @@ export function createStore({
       }
       default:
         if (!DELTA_TYPES.has(msg.type)) return false;
-        state[msg.type] = msg[msg.type] ?? (msg.type === "photos" ? [] : null);
+        state[msg.type] = msg[msg.type] ?? (msg.type === "photos" || msg.type === "weather_pics" ? [] : null);
         return true;
     }
   }

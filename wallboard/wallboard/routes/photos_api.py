@@ -11,6 +11,7 @@ from starlette.concurrency import run_in_threadpool
 
 from .. import auth
 from ..imaging import MAX_UPLOAD_BYTES, UnsupportedImage
+from ..photos import WEATHER_FLAGS
 
 router = APIRouter(dependencies=[Depends(auth.require_admin)])
 
@@ -42,6 +43,10 @@ class IdList(BaseModel):
     ids: list[str]
 
 
+class FlagsBody(BaseModel):
+    flags: list[str]
+
+
 class MoveBody(BaseModel):
     album_id: str
     index: int
@@ -62,7 +67,8 @@ def _store(request: Request):
 
 @router.get("/api/admin/photos")
 async def list_photos(request: Request) -> dict:
-    return {"albums": _store(request).admin_view()}
+    store = _store(request)
+    return {"albums": store.admin_view(), "weather": store.weather_admin_view(), "weather_flags": list(WEATHER_FLAGS)}
 
 
 @router.post("/api/admin/photos/upload")
@@ -76,6 +82,14 @@ async def upload(
         raise HTTPException(status_code=400, detail="no files")
     if all(a.id != album_id for a in store.albums()):
         raise HTTPException(status_code=404, detail="album not found")
+    try:
+        return {"results": await _ingest_all(request, files, lambda data: store.ingest(data, album_id))}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="album not found")
+
+
+async def _ingest_all(request: Request, files: list[UploadFile], ingest) -> list[dict]:
+    """Read and ingest each upload; per-file result {name, ok, error} (errors in the UI language)."""
     czech = _is_czech(request)
     results = []
     for f in files:
@@ -85,14 +99,31 @@ async def upload(
             results.append({"name": name, "ok": False, "error": TOO_LARGE["cs" if czech else "en"]})
             continue
         try:
-            await store.ingest(data, album_id)
+            await ingest(data)
             results.append({"name": name, "ok": True, "error": None})
         except UnsupportedImage as exc:
             msg = str(exc)
             results.append({"name": name, "ok": False, "error": CZECH_IMAGE_ERRORS.get(msg, msg) if czech else msg})
-        except KeyError:
-            raise HTTPException(status_code=404, detail="album not found")
-    return {"results": results}
+    return results
+
+
+@router.post("/api/admin/weather/upload")
+async def upload_weather(request: Request, files: list[UploadFile] = File(default=[], alias="files[]")) -> dict:
+    """Weather gallery upload (pictures for the Today page); flags are set afterwards."""
+    if not files:
+        raise HTTPException(status_code=400, detail="no files")
+    return {"results": await _ingest_all(request, files, _store(request).ingest_weather)}
+
+
+@router.put("/api/admin/weather/{pic_id}/flags")
+async def set_weather_flags(pic_id: str, body: FlagsBody, request: Request) -> dict:
+    unknown = [f for f in body.flags if f not in WEATHER_FLAGS]
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"unknown flag: {unknown[0]}")
+    try:
+        return {"flags": _store(request).set_weather_flags(pic_id, body.flags)}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="picture not found")
 
 
 @router.post("/api/admin/albums")

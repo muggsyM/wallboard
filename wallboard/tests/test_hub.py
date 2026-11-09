@@ -32,7 +32,7 @@ def test_snapshot_defaults():
     snap = Hub().snapshot()
     assert snap == {
         "type": "snapshot", "build": None, "config": None, "ha": {}, "calendar": None,
-        "weather": None, "photos": [], "status": {"ha": False, "google": {}},
+        "weather": None, "photos": [], "weather_pics": [], "status": {"ha": False, "google": {}},
     }
 
 

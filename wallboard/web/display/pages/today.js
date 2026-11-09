@@ -1,13 +1,15 @@
 // Today ("C · Family planner"): the large header (clock, long date, weather, today's
-// high/low and the next-rain hint, who's home), a framed photo with its caption, today's
+// high/low and the next-rain hint, who's home), a weather picture, today's
 // timeline, cards for the next 3 days and the quick tiles row.
 // Look: mockups/portrait-v1.html screen 1.
 //
-// - Photo: one ctx.photo.nextPhoto() per mount (a new photo on every visit). Landscape
-//   photos are contained over their own blurred bg_url, portrait ones cover the frame.
-//   No photos: the frame is hidden and the timeline takes its space. A photo that fails
-//   to load stays the visit's photo (frame hidden) until it is deleted or the page
-//   re-mounts, so a broken file is never re-fetched or swapped mid-visit (photoAction).
+// - Weather picture (mockup "prani", Dnes – počasí): a picture from the owner's weather
+//   gallery (state.weather_pics) whose flag matches the current condition (header.js
+//   currentWeather; lib/weather-pic.js maps HA conditions to flags with fallbacks). No text
+//   on it: the header already shows the weather. A random matching picture per visit, kept
+//   while it still matches; a new one when the condition changes. No matching picture (or
+//   one that fails to load): a large weather icon in the frame. The frame always keeps its
+//   size (425 x 931 px on the 1080 x 1920 board; the owner prepares pictures for it).
 // - Today list (mockup "prani"): the "Today" label, then one row per event in the style of
 //   the next-day cards: a member-colour dot and the text. All-day events first, then timed
 //   ones in start order ("10:30 Title", location on a second line); finished events faded;
@@ -21,9 +23,10 @@
 // The timeline and cards are rebuilt only when the calendar/weather payload, members,
 // language, zone or local minute changes (checked on every store update and every 20 s);
 // HA deltas only touch the header and the tiles.
-import { renderHeader, safeColor } from "../header.js";
+import { renderHeader, safeColor, currentWeather } from "../header.js";
 import { t, getLanguage, fmtWeekdayShort } from "../../shared/i18n.js";
 import { WEATHER_ICONS } from "../../shared/ha-format.js";
+import { pickPicture } from "../lib/weather-pic.js";
 import { localDate, addDays, noonOf, bucket, isPast, pickVisible } from "../lib/layout.js";
 import { renderTile } from "../tile.js";
 import { chipTime } from "./week.js";
@@ -66,13 +69,6 @@ export function todaySubtitle(weather, todayISO) {
   return [temps, rainHint(weather?.daily, todayISO)].filter(Boolean).join(" · ");
 }
 
-// What the photo frame does on a store update, given the visit's photo id (also when it
-// failed to load) and the ids currently in the photo list: "keep" | "pick" | "hide".
-export function photoAction(currentId, ids) {
-  if (currentId && ids.has(currentId)) return "keep";
-  if (ids.size) return "pick";
-  return currentId ? "hide" : "keep";
-}
 
 // Where the "now" line goes among today's timed events (start order): right after the last
 // finished one, 0 when none has finished. An earlier event still running stays above it.
@@ -153,14 +149,14 @@ export default {
   settings: [],
   mount(root, ctx) {
     root.innerHTML = `<div class="wb-page-header"></div>
-      <div class="wb-pt"><div class="wb-photo" hidden><img decoding="async" alt=""><div class="wb-caption"><i class="mdi mdi-image-outline"></i><span></span></div></div>
+      <div class="wb-pt"><div class="wb-wxpic"><img decoding="async" alt="" hidden><i class="mdi" hidden></i></div>
       <div class="wb-today"><span class="wb-lbl"></span><div class="wb-tl"></div></div></div>
       <div class="wb-cards3"></div>
       <div class="wb-qt"><div class="wb-tiles"></div></div>`;
     const header = root.querySelector(".wb-page-header");
-    const frame = root.querySelector(".wb-photo");
+    const frame = root.querySelector(".wb-wxpic");
     const img = frame.querySelector("img");
-    const caption = frame.querySelector(".wb-caption");
+    const icon = frame.querySelector("i");
     const box = root.querySelector(".wb-today");
     const label = root.querySelector(".wb-lbl");
     const tl = root.querySelector(".wb-tl");
@@ -175,38 +171,40 @@ export default {
     });
     let last = null; // key of the last timeline/cards build
     let alive = true;
-    let photo = null;
+    let pic = null; // the weather picture shown this visit ({id, url}) or null
+    const failed = new Set(); // picture ids that failed to load this visit
     let tiles = []; // [{entityId, handle}]
     let tilesKey = null;
 
-    function setPhoto(item) {
-      photo = item || null;
-      if (!photo) {
-        frame.hidden = true;
-        img.removeAttribute("src");
-        return;
-      }
-      frame.classList.toggle("landscape", Boolean(photo.landscape));
-      // JSON.stringify quotes and escapes the URL for CSS url("...").
-      frame.style.backgroundImage = photo.landscape && photo.bg_url ? `url(${JSON.stringify(String(photo.bg_url))})` : "";
-      caption.lastElementChild.textContent = photo.caption ?? "";
-      caption.hidden = !photo.caption;
-      img.src = photo.url;
-      frame.hidden = false;
+    function showIcon(condition) {
+      img.hidden = true;
+      img.removeAttribute("src");
+      icon.className = `mdi ${WEATHER_ICONS[condition] || "mdi-weather-partly-cloudy"}`;
+      icon.hidden = false;
     }
     img.addEventListener("error", () => {
-      if (!alive) return;
-      console.warn("today photo failed to load", photo?.url);
-      // Keep `photo` (photoAction keeps it while it is listed); only hide the frame.
-      frame.hidden = true;
-      img.removeAttribute("src");
+      if (!alive || !pic) return;
+      console.warn("weather picture failed to load", pic.url);
+      failed.add(pic.id);
+      pic = null;
+      syncPicture(ctx.store.get());
     });
 
-    // Keep the photo for the whole visit; only replace it when it is deleted.
-    function syncPhoto(state) {
-      const action = photoAction(photo?.id ?? null, new Set((state.photos || []).map((p) => p.id)));
-      if (action === "pick") setPhoto(ctx.photo.nextPhoto());
-      else if (action === "hide") setPhoto(null);
+    // Keep the visit's picture while it matches the condition; else pick another.
+    function syncPicture(state) {
+      const condition = currentWeather(state)?.condition ?? "";
+      const pics = (state.weather_pics || []).filter((p) => !failed.has(p?.id));
+      const next = pickPicture(pics, condition, pic?.id ?? null);
+      if (!next) {
+        pic = null;
+        showIcon(condition);
+        return;
+      }
+      if (next.id === pic?.id) return;
+      pic = next;
+      icon.hidden = true;
+      img.src = next.url;
+      img.hidden = false;
     }
 
     function syncTiles(state) {
@@ -252,7 +250,7 @@ export default {
       const today = localDate(now, tz);
       renderHeader(header, state, { subtitle: todaySubtitle(state.weather, today) });
       syncTiles(state);
-      syncPhoto(state);
+      syncPicture(state);
       win.update(state);
       const members = state.config?.members;
       const key = { tz, minute: Math.floor(now / 60000), calendar: state.calendar, weather: state.weather, lang: getLanguage(), members };
@@ -272,7 +270,7 @@ export default {
 
     const refit = () => alive && render(ctx.store.get(), true);
     const timer = setInterval(() => render(ctx.store.get()), MINUTE_CHECK_MS);
-    // The timeline height depends on the page size, the photo frame and the web font.
+    // The timeline height depends on the page size and the web font.
     let ro = null;
     let lastHeight = 0;
     if (typeof ResizeObserver === "function") {

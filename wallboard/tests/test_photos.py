@@ -190,13 +190,14 @@ def test_mutation_publishes_photos(c, app):
         seen.append(msg)
 
     app.state.hub._broadcast = spy
+    photos = lambda: [m for m in seen if m["type"] == "photos"]  # noqa: E731
     aid = new_album(c)
-    assert seen[-1] == {"type": "photos", "photos": []}
+    assert photos()[-1] == {"type": "photos", "photos": []}
     upload(c, aid, [("a.jpg", jpeg())])
-    assert len(seen[-1]["photos"]) == 1
-    pid = seen[-1]["photos"][0]["id"]
+    assert len(photos()[-1]["photos"]) == 1
+    pid = photos()[-1]["photos"][0]["id"]
     assert c.delete(f"/api/admin/photos/{pid}").status_code == 200
-    assert seen[-1]["photos"] == []
+    assert photos()[-1]["photos"] == []
     assert c.delete(f"/api/admin/photos/{pid}").status_code == 404
 
 
@@ -449,3 +450,54 @@ def test_sweep_failure_logs_not_raises(data_dir, monkeypatch, caplog):
     app = create_app(data_dir)  # must not raise
     assert app.state.photos.albums() == []
     assert "sweep" in caplog.text
+
+
+# ---- weather gallery (Today page pictures) ----
+
+
+def upload_weather(c, files):
+    return c.post(
+        "/api/admin/weather/upload",
+        files=[("files[]", (n, b, "image/jpeg")) for n, b in files],
+        headers={"X-Requested-With": "wallboard"},
+    )
+
+
+def weather(c):
+    return c.get("/api/admin/photos").json()["weather"]
+
+
+def test_weather_upload_flags_and_display_topic(c, app):
+    r = upload_weather(c, [("sun.jpg", jpeg()), ("bad.jpg", b"nope")])
+    assert [x["ok"] for x in r.json()["results"]] == [True, False]
+    [pic] = weather(c)
+    assert pic["flags"] == [] and pic["thumb_url"].endswith(".thumb.jpg")
+    # Not in any album, not in the slideshow; without a flag not on the display either.
+    assert all(pic["id"] not in a["photos"] for a in c.get("/api/admin/photos").json()["albums"])
+    assert app.state.hub.snapshot()["photos"] == []
+    assert app.state.hub.snapshot()["weather_pics"] == []
+    h = {"X-Requested-With": "wallboard"}
+    r = c.put(f"/api/admin/weather/{pic['id']}/flags", json={"flags": ["rainy", "sunny", "rainy"]}, headers=h)
+    assert r.status_code == 200 and r.json()["flags"] == ["sunny", "rainy"]
+    assert app.state.hub.snapshot()["weather_pics"] == [{"id": pic["id"], "url": f"/media/{pic['id']}.jpg", "flags": ["sunny", "rainy"]}]
+    assert c.put(f"/api/admin/weather/{pic['id']}/flags", json={"flags": ["tornado"]}, headers=h).status_code == 400
+    assert c.put("/api/admin/weather/nope/flags", json={"flags": []}, headers=h).status_code == 404
+    assert c.get(f"/media/{pic['id']}.jpg").status_code == 200
+
+
+def test_weather_pictures_persist_survive_sweep_and_delete(c, app, data_dir):
+    upload_weather(c, [("sun.jpg", jpeg())])
+    pid = weather(c)[0]["id"]
+    c.put(f"/api/admin/weather/{pid}/flags", json={"flags": ["snowy"]}, headers={"X-Requested-With": "wallboard"})
+    again = create_app(data_dir)  # reload photos.json + sweep: the files stay, flags kept
+    assert again.state.photos.weather_admin_view()[0]["flags"] == ["snowy"]
+    assert (data_dir / "photos" / f"{pid}.jpg").is_file()
+    assert c.delete(f"/api/admin/photos/{pid}").status_code == 200
+    assert weather(c) == [] and not (data_dir / "photos" / f"{pid}.jpg").exists()
+
+
+def test_weather_upload_requires_admin(app):
+    r = make_client(app, peer=("192.168.1.5", 1), host="192.168.1.2", admin=False).post(
+        "/api/admin/weather/upload", files=[("files[]", ("a.jpg", jpeg(), "image/jpeg"))], headers={"X-Requested-With": "wallboard"}
+    )
+    assert r.status_code in (401, 403)

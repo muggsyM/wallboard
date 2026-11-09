@@ -1,6 +1,7 @@
 // Photos page (admin only, phone first). Plain ES module, no build step.
 //
-// Two views on one page: the album list (#) and one album (#album=<id>). Albums: drag handle to
+// Three views on one page: the album list (#), one album (#album=<id>) and the weather gallery
+// (#weather: pictures only for the Today page, each with weather flags; tap a flag to toggle it). Albums: drag handle to
 // reorder, inline rename, show/hide switch, "new album". Inside an album: upload with per-file
 // progress (one XHR per file, at most two at a time), a thumbnail grid with drag-to-reorder
 // (long press on touch), and a per-photo menu to delete (undo toast, the DELETE is sent after
@@ -13,6 +14,7 @@ import { moveItem } from "/static/admin/settings-model.js";
 import { h, button, badge } from "/static/admin/dom.js";
 import { makeReorderable } from "/static/admin/reorder.js";
 import { api, CSRF } from "/static/admin/api.js";
+import { FALLBACK } from "/static/display/lib/weather-pic.js";
 
 const LONG_PRESS_MS = 300;
 const UNDO_MS = 5000;
@@ -21,6 +23,8 @@ const UPLOAD_CONCURRENCY = 2;
 
 const S = {
   albums: [], // GET /api/admin/photos: [{id, name, hidden, photos: [{id, thumb_url}]}]
+  weather: [], // the weather gallery: [{id, thumb_url, flags}]
+  flags: [], // the weather flags, in display order
   shuffle: false,
   pending: new Map(), // photo id -> {timer, toast, sending}: deleted locally, DELETE not sent yet
   upload: null, // {albumId, box, running}
@@ -31,6 +35,13 @@ const isPending = (photo) => S.pending.has(photo.id);
 const visiblePhotos = (album) => album.photos.filter((p) => !isPending(p));
 const albumById = (id) => S.albums.find((a) => a.id === id) || null;
 const openAlbumId = () => new URLSearchParams(location.hash.slice(1)).get("album");
+const weatherOpen = () => new URLSearchParams(location.hash.slice(1)).has("weather");
+
+function adopt(r) {
+  S.albums = r.albums;
+  S.weather = r.weather || [];
+  S.flags = r.weather_flags || [];
+}
 
 // ---- toasts -----------------------------------------------------------------------------------
 
@@ -52,7 +63,7 @@ const errorToast = (text) => toast(text, { kind: "error" });
 
 async function refresh() {
   try {
-    S.albums = (await api("GET", "/api/admin/photos")).albums;
+    adopt(await api("GET", "/api/admin/photos"));
   } catch (e) {
     errorToast(t("admin_photos_load_failed", { msg: e.message }));
   }
@@ -179,7 +190,10 @@ async function sendDelete(id) {
     if (!gone && e.status !== 401) errorToast(t("admin_photos_delete_failed"));
   }
   S.pending.delete(id);
-  if (gone) for (const a of S.albums) a.photos = a.photos.filter((p) => p.id !== id);
+  if (gone) {
+    for (const a of S.albums) a.photos = a.photos.filter((p) => p.id !== id);
+    S.weather = S.weather.filter((p) => p.id !== id);
+  }
   render();
 }
 
@@ -189,7 +203,9 @@ function flushDeletes() {
 
 // ---- upload -------------------------------------------------------------------------------------
 
-function uploadFile(albumId, item) {
+// target: {key, url, fields}: an album ({key: id, url: photos upload, fields: {album_id}}) or
+// the weather gallery ({key: "weather", url: weather upload, fields: {}}).
+function uploadFile(target, item) {
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
     const finish = (status, text) => {
@@ -199,7 +215,7 @@ function uploadFile(albumId, item) {
       item.status.textContent = r.ok ? t("admin_photos_uploaded") : r.error;
       resolve(r.ok);
     };
-    xhr.open("POST", "/api/admin/photos/upload");
+    xhr.open("POST", target.url);
     xhr.setRequestHeader("X-Requested-With", CSRF["X-Requested-With"]);
     xhr.setRequestHeader("Accept-Language", getLanguage());
     xhr.upload.onprogress = (e) => {
@@ -213,19 +229,22 @@ function uploadFile(albumId, item) {
     };
     xhr.onerror = xhr.onabort = xhr.ontimeout = () => finish(0, "");
     const form = new FormData();
-    form.append("album_id", albumId);
+    for (const [k, v] of Object.entries(target.fields)) form.append(k, v);
     form.append("files[]", item.file, item.file.name);
     xhr.send(form);
   });
 }
 
-async function startUpload(album, fileList) {
+const albumTarget = (album) => ({ key: album.id, url: "/api/admin/photos/upload", fields: { album_id: album.id } });
+const WEATHER_TARGET = { key: "weather", url: "/api/admin/weather/upload", fields: {} };
+
+async function startUpload(target, fileList) {
   const files = [...fileList];
   if (!files.length || S.upload?.running) return;
   const list = h("ul", { class: "uploads" });
   const summary = h("p", { class: "upload-summary", role: "status" });
   const box = h("div", { class: "upload-box" }, list, summary);
-  S.upload = { albumId: album.id, box, running: true };
+  S.upload = { key: target.key, box, running: true };
   const items = files.map((file) => {
     const item = {
       file,
@@ -239,7 +258,7 @@ async function startUpload(album, fileList) {
   render();
   let ok = 0;
   await M.runPool(items, UPLOAD_CONCURRENCY, async (item) => {
-    if (await uploadFile(album.id, item)) ok++;
+    if (await uploadFile(target, item)) ok++;
   });
   S.upload.running = false;
   summary.replaceChildren(
@@ -331,6 +350,7 @@ function renderList() {
     onkeydown: (e) => e.key === "Enter" && (e.preventDefault(), createAlbum(nameInput)),
   });
   return [
+    tabs(false),
     h(
       "section",
       { class: "panel" },
@@ -379,7 +399,7 @@ function renderAlbum(album) {
     disabled: busy, // one upload batch at a time
     class: "visually-hidden",
     onchange: (e) => {
-      startUpload(album, e.target.files);
+      startUpload(albumTarget(album), e.target.files);
       e.target.value = "";
     },
   });
@@ -409,9 +429,134 @@ function renderAlbum(album) {
         h("span", { class: "muted", text: tn("admin_photos_count", shown.length) }),
       ),
       h("label", { class: `btn upload-btn${busy ? " disabled" : ""}` }, picker, t("admin_photos_upload")),
-      S.upload?.albumId === album.id ? S.upload.box : null,
+      S.upload?.key === album.id ? S.upload.box : null,
       shown.length ? h("p", { class: "hint", text: t("admin_drag_hint") }) : h("p", { class: "muted", text: t("admin_photos_empty") }),
       grid,
+    ),
+  ];
+}
+
+// ---- weather gallery view -----------------------------------------------------------------------
+
+function tabs(weather) {
+  return h(
+    "nav",
+    { class: "tabs" },
+    h("a", { href: "#", class: weather ? "" : "on", text: t("admin_photos_tab_albums") }),
+    h("a", { href: "#weather", class: weather ? "on" : "", text: t("admin_weather_tab") }),
+  );
+}
+
+const flagName = (f) => t(`wx_flag_${f}`);
+
+function toggleFlag(pic, flag) {
+  const before = pic.flags;
+  const next = before.includes(flag) ? before.filter((f) => f !== flag) : S.flags.filter((f) => f === flag || before.includes(f));
+  optimistic(
+    () => (pic.flags = next),
+    () => api("PUT", `/api/admin/weather/${encodeURIComponent(pic.id)}/flags`, { flags: next }),
+    () => (pic.flags = before),
+  );
+}
+
+function weatherMenu(pic) {
+  const dlg = $("#photo-menu");
+  dlg.replaceChildren(
+    h("img", { class: "sheet-thumb", src: pic.thumb_url, alt: "" }),
+    button(t("admin_photos_delete"), () => {
+      dlg.close();
+      deletePhoto(pic);
+    }, "danger"),
+    button(t("admin_photos_cancel"), () => dlg.close(), "link"),
+  );
+  dlg.showModal();
+}
+
+function weatherCard(pic) {
+  return h(
+    "div",
+    { class: "wx-card" },
+    h(
+      "div",
+      { class: "wx-img" },
+      h("img", { src: pic.thumb_url, alt: "", loading: "lazy", decoding: "async" }),
+      h("button", { type: "button", class: "thumb-menu", "aria-label": t("admin_photos_menu"), text: "⋯", onclick: () => weatherMenu(pic) }),
+    ),
+    h(
+      "div",
+      { class: "wx-flags" },
+      S.flags.map((f) =>
+        h("button", {
+          type: "button",
+          class: `wx-flag${pic.flags.includes(f) ? " on" : ""}`,
+          "aria-pressed": pic.flags.includes(f) ? "true" : "false",
+          text: flagName(f),
+          onclick: () => toggleFlag(pic, f),
+        }),
+      ),
+    ),
+    pic.flags.length ? null : h("p", { class: "wx-warn", text: t("admin_weather_no_flag") }),
+  );
+}
+
+// What the board shows for a flag without pictures: the first fallback flag that has some,
+// else the icon.
+function missingText(flag, count) {
+  const seen = new Set([flag]);
+  for (let f = FALLBACK[flag]; f && !seen.has(f); f = FALLBACK[f]) {
+    seen.add(f);
+    if (count(f)) return t("admin_weather_missing_uses", { flag: flagName(f) });
+  }
+  return t("admin_weather_missing");
+}
+
+function renderWeather() {
+  const shown = S.weather.filter((p) => !isPending(p));
+  const busy = !!S.upload?.running;
+  const picker = h("input", {
+    type: "file",
+    accept: "image/*,.heic",
+    multiple: true,
+    disabled: busy,
+    class: "visually-hidden",
+    onchange: (e) => {
+      startUpload(WEATHER_TARGET, e.target.files);
+      e.target.value = "";
+    },
+  });
+  const count = (f) => shown.filter((p) => p.flags.includes(f)).length;
+  const rows = S.flags.map((f) => {
+    const n = count(f);
+    return h(
+      "tr",
+      {},
+      h("td", { text: flagName(f) }),
+      h("td", { class: "muted", text: FALLBACK[f] ? `→ ${flagName(FALLBACK[f])}` : "—" }),
+      h("td", { class: n ? "ok" : "warn", text: n ? String(n) : missingText(f, count) }),
+    );
+  });
+  return [
+    tabs(true),
+    h(
+      "section",
+      { class: "panel" },
+      h("h2", { text: t("admin_weather_title") }),
+      h("p", { class: "hint", text: t("admin_weather_hint") }),
+      h("label", { class: `btn upload-btn${busy ? " disabled" : ""}` }, picker, t("admin_weather_upload")),
+      S.upload?.key === "weather" ? S.upload.box : null,
+      shown.length ? null : h("p", { class: "muted", text: t("admin_photos_empty") }),
+      h("div", { class: "wx-grid" }, shown.map(weatherCard)),
+    ),
+    h(
+      "section",
+      { class: "panel" },
+      h("h2", { text: t("admin_weather_flags") }),
+      h(
+        "table",
+        { class: "wx-table" },
+        h("tr", {}, h("th", { text: t("admin_weather_flag") }), h("th", { text: t("admin_weather_fallback") }), h("th", { text: t("admin_weather_count") })),
+        rows,
+      ),
     ),
   ];
 }
@@ -421,18 +566,21 @@ function renderAlbum(album) {
 function render() {
   const id = openAlbumId();
   const album = id ? albumById(id) : null;
-  const title = album ? album.name : t("admin_photos");
+  const weather = !album && weatherOpen();
+  const title = album ? album.name : weather ? t("admin_weather_title") : t("admin_photos");
   document.title = `Wallboard – ${title}`;
   $("#title").textContent = t("admin_photos");
   $("#settings-link").textContent = t("admin_title");
   $("#logout").textContent = t("admin_logout");
-  $("#app").replaceChildren(...(album ? renderAlbum(album) : renderList()));
+  $("#app").replaceChildren(...(album ? renderAlbum(album) : weather ? renderWeather() : renderList()));
 }
 
 async function init() {
   let view;
   try {
-    [view, S.albums] = await Promise.all([api("GET", "/api/admin/config"), api("GET", "/api/admin/photos").then((r) => r.albums)]);
+    let photos;
+    [view, photos] = await Promise.all([api("GET", "/api/admin/config"), api("GET", "/api/admin/photos")]);
+    adopt(photos);
   } catch (e) {
     $("#app").replaceChildren(h("p", { class: "note error", text: e.message }));
     return;

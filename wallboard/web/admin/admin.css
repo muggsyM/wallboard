@@ -414,3 +414,22 @@ body.photos { padding-bottom: 32px; }
 .task-row { display: grid; grid-template-columns: auto minmax(0, 1fr) 150px auto; gap: 8px; align-items: center; }
 @media (max-width: 520px) { .task-row { grid-template-columns: auto minmax(0, 1fr) auto; } .task-row input[type=date] { grid-column: 2; grid-row: 2; } }
 .settings input[type=date] { color-scheme: dark; }
+
+/* Photos page tabs: Albums | Weather (Today page). */
+.tabs { display: flex; gap: 8px; margin: 0 0 12px; flex-wrap: wrap; }
+.tabs a { padding: 8px 16px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); text-decoration: none; }
+.tabs a.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+/* Weather gallery: picture cards with flag toggles, coverage table. */
+.wx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-top: 12px; }
+.wx-card { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.wx-img { position: relative; aspect-ratio: 425 / 931; max-height: 260px; width: 100%; background: var(--input); }
+.wx-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wx-flags { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; }
+.wx-flag { min-height: 32px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: none; color: var(--muted); font: inherit; font-size: .85rem; cursor: pointer; }
+.wx-flag.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.wx-warn { margin: 0 10px 10px; font-size: .8rem; color: #ffb35c; }
+.wx-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.wx-table th { text-align: left; color: var(--muted); font-weight: 500; padding: 6px 8px; }
+.wx-table td { padding: 8px; border-top: 1px solid var(--line); }
+.wx-table td.ok { color: #7be0a5; }
+.wx-table td.warn { color: #ffb35c; }

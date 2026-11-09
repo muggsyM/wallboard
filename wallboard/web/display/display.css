@@ -431,10 +431,9 @@ html.remote #app {
 .wb-mdet-hint { flex: none; font-size: 3cqw; opacity: .6; text-align: center; }
 
 /* ---------- today page ---------- */
-/* Photo and today's schedule side by side (mockup "dnes-varianty" variant P): the photo
-   45 % wide on the left, the schedule in a panel on the right; the row takes the
-   height left between the header and the next-days cards. With no photos the schedule
-   uses the full width. */
+/* Weather picture and today's schedule side by side (mockup "prani"): the picture 45 % wide
+   on the left, the schedule in a panel on the right; the row takes the height left between
+   the header and the next-days cards (fixed height), so the picture frame has one size. */
 .wb-pt {
   flex: 1;
   min-height: 0;
@@ -442,40 +441,26 @@ html.remote #app {
   grid-template-columns: minmax(0, 45fr) minmax(0, 55fr);
   gap: 2.6cqw;
 }
-.wb-pt:has(> .wb-photo[hidden]) { grid-template-columns: minmax(0, 1fr); }
-.wb-photo {
+/* The weather picture (lib/weather-pic.js): fills the frame, no text on it; a large weather
+   icon when the gallery has nothing for the current condition. */
+.wb-wxpic {
   position: relative;
   min-height: 0;
   border-radius: 3cqw;
   overflow: hidden;
-  background: var(--wb-panel) center / cover no-repeat;
+  background: var(--wb-panel);
+  display: grid;
+  place-items: center;
 }
-.wb-photo[hidden] { display: none; }
-.wb-photo img {
+.wb-wxpic img {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
-/* Landscape: the whole photo, over its own blurred background (set inline). */
-.wb-photo.landscape img { object-fit: contain; }
-.wb-caption {
-  position: absolute;
-  left: 2.6cqw;
-  bottom: 2.2cqw;
-  right: 2.6cqw;
-  display: flex;
-  align-items: center;
-  gap: 1cqw;
-  font-size: 2.8cqw;
-  opacity: .9;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-shadow: 0 .3cqw 1.2cqw rgba(0, 0, 0, .7);
-}
-.wb-caption[hidden] { display: none; }
+.wb-wxpic .mdi { font-size: 24cqw; line-height: 1; color: var(--wb-accent-sun); opacity: .85; }
+.wb-wxpic [hidden] { display: none; }
 
 .wb-today {
   min-height: 0;
@@ -548,7 +533,10 @@ html.remote #app {
   border-radius: 2.4cqw;
   padding: 2.2cqw;
   font-size: 2.8cqw;
-  min-height: 16cqw;
+  /* Fixed (fits the header, 2 events and "+N more"), so the weather picture frame above
+     keeps one size whatever the next days hold: the owner prepares pictures for it. */
+  height: 23cqw;
+  overflow: hidden;
   box-sizing: border-box;
 }
 .wb-card3-h {

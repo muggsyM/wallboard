@@ -1,4 +1,8 @@
-"""Photo store: albums, ordering and the three JPEG files per photo, persisted in photos.json."""
+"""Photo store: albums, ordering and the three JPEG files per photo, persisted in photos.json.
+
+Besides the albums it keeps the weather gallery: pictures only for the Today page, each with
+weather flags (WEATHER_FLAGS); the display picks one matching the current HA condition. They
+use the same files and processing as photos but never appear in albums or the slideshow."""
 
 from __future__ import annotations
 
@@ -26,6 +30,8 @@ ZIP_SPOOL_BYTES = 10 * 1024 * 1024
 log = logging.getLogger(__name__)
 _RESERVED = re.compile(r"(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?", re.IGNORECASE)
 _PHOTO_FILE = re.compile(r"([0-9a-f]{32})(\.bg|\.thumb)?\.jpg")
+# Weather gallery flags; the display maps HA conditions onto them (web/display/lib/weather-pic.js).
+WEATHER_FLAGS = ("sunny", "clear-night", "partlycloudy", "cloudy", "fog", "rainy", "lightning", "snowy", "windy")
 
 
 @dataclass
@@ -58,13 +64,15 @@ class PhotoStore:
         self._tasks: set[asyncio.Task] = set()
         self._albums: list[Album] = []
         self._landscape: dict[str, bool] = {}
+        self._weather: dict[str, list[str]] = {}  # weather picture id -> flags, in upload order
+        self._last_pics: list[dict[str, Any]] = []  # weather_pics as last published
         self._read_only = False
         self._load()
 
     # persistence
 
     def _load(self) -> None:
-        self._albums, self._landscape = [], {}
+        self._albums, self._landscape, self._weather = [], {}, {}
         try:
             text = self._json.read_text(encoding="utf-8")
             raw = json.loads(text)
@@ -73,6 +81,9 @@ class PhotoStore:
                 for a in raw.get("albums", [])
             ]
             landscape = {k: bool(v) for k, v in raw.get("landscape", {}).items()}
+            weather = {
+                str(w["id"]): [f for f in w.get("flags", []) if f in WEATHER_FLAGS] for w in raw.get("weather", [])
+            }
         except FileNotFoundError:
             self._sweep()
             return
@@ -80,7 +91,7 @@ class PhotoStore:
             self._set_aside()
             self._sweep()
             return
-        self._albums, self._landscape = albums, landscape
+        self._albums, self._landscape, self._weather = albums, landscape, weather
         self._sweep()
 
     def _set_aside(self) -> None:
@@ -107,7 +118,7 @@ class PhotoStore:
             log.exception("photo folder sweep failed; continuing without it")
 
     def _sweep_files(self) -> None:
-        known = {p for a in self._albums for p in a.photo_ids}
+        known = {p for a in self._albums for p in a.photo_ids} | set(self._weather)
         quarantine = not any(self._json.parent.glob(self._json.name + ".corrupt-*"))
         moved = 0
         for f in list(self._dir.iterdir()):
@@ -133,6 +144,7 @@ class PhotoStore:
                 {"id": a.id, "name": a.name, "hidden": a.hidden, "photo_ids": a.photo_ids} for a in self._albums
             ],
             "landscape": self._landscape,
+            "weather": [{"id": i, "flags": f} for i, f in self._weather.items()],
         }
         _atomic_write(self._json, json.dumps(doc, indent=2), 0o644)
 
@@ -143,17 +155,28 @@ class PhotoStore:
     def publish(self) -> None:
         """Update the hub's photos topic and broadcast it (the broadcast needs a running event loop)."""
         photos = self.display_items()
+        pics = self.weather_items()
+        pics_changed = pics != self._last_pics
+        self._last_pics = pics
         self._hub.set_topic("photos", photos)
+        self._hub.set_topic("weather_pics", pics)
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        task = loop.create_task(self._hub.publish({"type": "photos", "photos": photos}))
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
+        # The weather pictures go out only when they changed (an album edit sends one message).
+        msgs = [{"type": "photos", "photos": photos}]
+        if pics_changed:
+            msgs.append({"type": "weather_pics", "weather_pics": pics})
+        for msg in msgs:
+            task = loop.create_task(self._hub.publish(msg))
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
 
     def start(self) -> None:
         self._hub.set_topic("photos", self.display_items())
+        self._last_pics = self.weather_items()
+        self._hub.set_topic("weather_pics", self._last_pics)
 
     # lookups
 
@@ -263,11 +286,48 @@ class PhotoStore:
             return photo_id
 
     def delete(self, photo_id: str) -> None:
-        album = self._find_photo(photo_id)
-        album.photo_ids.remove(photo_id)
+        """Delete a photo or a weather picture. Raises KeyError."""
+        if photo_id in self._weather:
+            del self._weather[photo_id]
+        else:
+            album = self._find_photo(photo_id)
+            album.photo_ids.remove(photo_id)
         self._landscape.pop(photo_id, None)
         self._commit()
         self._remove_files(photo_id)
+
+    # weather gallery
+
+    async def ingest_weather(self, data: bytes) -> str:
+        """Process one upload into the weather gallery (no flags yet). Raises UnsupportedImage."""
+        async with self._lock:
+            pic_id = uuid.uuid4().hex
+            await run_in_threadpool(self._process_and_write, data, pic_id)
+            self._weather[pic_id] = []
+            try:
+                self._commit()
+            except BaseException:
+                del self._weather[pic_id]
+                self._remove_files(pic_id)
+                raise
+            return pic_id
+
+    def set_weather_flags(self, pic_id: str, flags: list[str]) -> list[str]:
+        """Replace a weather picture's flags (unknown ones dropped, order of WEATHER_FLAGS).
+        Raises KeyError."""
+        if pic_id not in self._weather:
+            raise KeyError(pic_id)
+        wanted = set(flags)
+        self._weather[pic_id] = [f for f in WEATHER_FLAGS if f in wanted]
+        self._commit()
+        return list(self._weather[pic_id])
+
+    def weather_items(self) -> list[dict[str, Any]]:
+        """For the display: pictures that have at least one flag."""
+        return [{"id": i, "url": f"/media/{i}.jpg", "flags": list(f)} for i, f in self._weather.items() if f]
+
+    def weather_admin_view(self) -> list[dict[str, Any]]:
+        return [{"id": i, "thumb_url": f"/media/{i}.thumb.jpg", "flags": list(f)} for i, f in self._weather.items()]
 
     # views
 
@@ -298,7 +358,10 @@ class PhotoStore:
 
     def snapshot_for_zip(self) -> list[tuple[str, str, list[str]]]:
         """Copy album names/ids/photo lists; call on the event loop so the worker sees a stable view."""
-        return [(a.name, a.id, list(a.photo_ids)) for a in self._albums]
+        albums = [(a.name, a.id, list(a.photo_ids)) for a in self._albums]
+        if self._weather:
+            albums.append(("Počasí", "weather", list(self._weather)))  # zip folder of the weather gallery
+        return albums
 
     def build_zip(self, snapshot: list[tuple[str, str, list[str]]]) -> tempfile.SpooledTemporaryFile:
         out = tempfile.SpooledTemporaryFile(max_size=ZIP_SPOOL_BYTES, dir=self._dir.parent)
