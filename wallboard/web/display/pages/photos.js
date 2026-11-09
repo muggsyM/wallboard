@@ -10,7 +10,7 @@
 //   pre-blurred bg_url (cover), which the server renders, so no CSS blur.
 // - Bottom left the album name (`show_caption`, default on), bottom right a small clock.
 // - No photos: a calm hint on the chalkboard to add some in Settings.
-// - Left and right edge strips (‹ ›, data-tap) step to the previous / next photo by hand;
+// - Arrows in the bottom corners (‹ ›, data-tap, level with the page dots) step to the previous / next photo by hand;
 //   the shell's touch pause keeps the page up meanwhile and the photo timer restarts.
 //   Elsewhere taps and swipes are the shell's (tap: next page, swipe: page).
 import { t, fmtTime } from "../../shared/i18n.js";

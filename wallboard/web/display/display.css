@@ -750,7 +750,7 @@ html.remote .wb-tile.view-only { cursor: default; }
 .wb-ph-layer.landscape img { object-fit: contain; }
 .wb-ph-caption, .wb-ph-clock {
   position: absolute;
-  bottom: 8cqw; /* above the page dots */
+  bottom: 13cqw; /* above the arrows and page dots */
   font-size: 4.2cqw;
   line-height: 1.2;
   white-space: nowrap;
@@ -764,22 +764,23 @@ html.remote .wb-tile.view-only { cursor: default; }
 }
 .wb-ph-clock { right: 5cqw; font-size: 6cqw; font-variant-numeric: tabular-nums; }
 .wb-ph-caption[hidden], .wb-ph-empty[hidden], .wb-ph-nav[hidden] { display: none; }
-/* Edge strips for previous / next photo (pages/photos.js): big touch targets, faint marks. */
+/* Previous / next photo (pages/photos.js): the bottom corners, the arrows level with the
+   page dots; the touch areas are larger than the marks. */
 .wb-ph-nav {
   position: absolute;
-  top: 12cqw;
-  bottom: 16cqw; /* clear of the caption, clock and page dots */
-  width: 20cqw;
+  bottom: 0;
+  height: 12cqw;
+  width: 24cqw;
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 12cqw;
+  font-size: 11cqw;
+  line-height: 1;
   color: rgba(255, 255, 255, .55);
   text-shadow: 0 0 2.4cqw rgba(0, 0, 0, .7);
   -webkit-tap-highlight-color: transparent;
 }
-.wb-ph-nav.prev { left: 0; justify-content: flex-start; padding-left: 2cqw; }
-.wb-ph-nav.next { right: 0; justify-content: flex-end; padding-right: 2cqw; }
+.wb-ph-nav.prev { left: 0; justify-content: flex-start; padding-left: 3cqw; }
+.wb-ph-nav.next { right: 0; justify-content: flex-end; padding-right: 3cqw; }
 .wb-ph-nav:active { color: rgba(255, 255, 255, .9); }
 .wb-ph-empty {
   position: absolute;
@@ -991,6 +992,7 @@ html.remote .wb-tile.view-only { cursor: default; }
   display: flex;
   justify-content: center;
   gap: 1.4cqw;
+  pointer-events: none; /* only a marker: touches reach the page below (Photos arrows) */
 }
 .wb-dots span {
   width: 1.8cqw;
